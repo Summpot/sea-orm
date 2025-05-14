@@ -654,13 +654,13 @@ where
     fn into_active_value(self) -> ActiveValue<V>;
 }
 
-impl<V> IntoActiveValue<Option<V>> for Option<V>
+impl<V> IntoActiveValue<V> for Option<V>
 where
     V: IntoActiveValue<V> + Into<Value> + Nullable,
 {
-    fn into_active_value(self) -> ActiveValue<Option<V>> {
+    fn into_active_value(self) -> ActiveValue<V> {
         match self {
-            Some(value) => Set(Some(value)),
+            Some(value) => Set(value),
             None => NotSet,
         }
     }
@@ -969,17 +969,33 @@ mod tests {
             use crate::entity::prelude::*;
 
             #[derive(DeriveIntoActiveModel)]
-            pub struct NewFruit {
+            pub struct NewFruit1 {
                 // id is omitted
                 pub name: String,
                 // it is required as opposed to optional in Model
                 pub cake_id: i32,
             }
+
+            #[derive(DeriveIntoActiveModel)]
+            pub struct NewFruit2 {
+                pub name: Option<String>,
+                pub cake_id: Option<Option<i32>>,
+            }
+
+            #[derive(DeriveIntoActiveModel)]
+            pub struct NewFruit3 {
+                pub name: Option<String>,
+                pub cake_id: Option<i32>,
+            }
         }
 
+        
+        
         assert_eq!(
-            my_fruit::NewFruit {
+            my_fruit::NewFruit1 {
+                // Mapping T to Set(T)
                 name: "Apple".to_owned(),
+                // Mapping T (required) to Set(Some(T))
                 cake_id: 1,
             }
             .into_active_model(),
@@ -987,6 +1003,72 @@ mod tests {
                 id: NotSet,
                 name: Set("Apple".to_owned()),
                 cake_id: Set(Some(1)),
+            }
+        );
+
+        
+        
+        assert_eq!(
+            my_fruit::NewFruit2 {
+                // Mapping Some(T) to Set(T)
+                name: Some("Apple".to_owned()),
+                // Mapping Some(Some(T)) to Set(Some(T))
+                cake_id: Some(Some(1)),
+            }
+            .into_active_model(),
+            fruit::ActiveModel {
+                id: NotSet,
+                name: Set("Apple".to_owned()),
+                cake_id: Set(Some(1)),
+            }
+        );
+
+        assert_eq!(
+            my_fruit::NewFruit2 {
+                // Mapping None to NotSet
+                name: None,
+                // Mapping Some(None) (Option<Option<T>>) to Set(None)
+                cake_id: Some(None),
+            }
+            .into_active_model(),
+            fruit::ActiveModel {
+                id: NotSet,
+                name: NotSet,
+                cake_id: Set(None),
+            }
+        );
+
+        assert_eq!(
+            my_fruit::NewFruit2 {
+                // Mapping None (Option<T>) to NotSet (T)
+                name: None,
+                // Mapping None (Option<Option<T>>) to NotSet (Option<T>)
+                cake_id: None,
+            }
+            .into_active_model(),
+            fruit::ActiveModel {
+                id: NotSet,
+                name: NotSet,
+                cake_id: NotSet,
+            }
+        );
+
+        assert_eq!(
+            my_fruit::NewFruit3 {
+                // Mapping None (Option<T>) to NotSet (T)
+                name: None,
+                // Mapping None (Option<T>) to Set(None) (Option<T>)
+                // Won't get passed as cake_id is NotSet,
+                // how about just disable this mapping?
+                // Since it can be replaced by Mapping Some(None) (Option<Option<T>>) to Set(None)
+                // but mapping None (Option<T>) to NotSet (T) has no alternatives, it won't compile.
+                cake_id: None,
+            }
+            .into_active_model(),
+            fruit::ActiveModel {
+                id: NotSet,
+                name: NotSet,
+                cake_id: Set(None),
             }
         );
     }

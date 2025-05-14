@@ -8,8 +8,8 @@ use sea_orm::{ActiveValue, IntoActiveValue};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub weight: Option<f32>,
-    pub amount: Option<i32>,
+    pub weight: f32,
+    pub amount: i32,
     pub category: Option<Category>,
     pub color: Option<Color>,
 }
@@ -21,8 +21,8 @@ impl ActiveModelBehavior for ActiveModel {}
 
 #[derive(Clone, Debug, PartialEq, DeriveIntoActiveModel)]
 pub struct CustomActiveModel {
-    pub weight: Option<f32>,
-    pub amount: Option<Option<i32>>,
+    pub weight: f32,
+    pub amount: Option<i32>,
     pub category: Option<Category>,
     pub color: Option<Option<Color>>,
 }
