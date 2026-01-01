@@ -44,6 +44,7 @@ async-std = { version = "1", features = ["attributes", "tokio1"] }
 [features]
 cli = ["clap", "dotenvy", "sea-orm-cli/cli"]
 default = ["cli"]
+cloudflare-d1 = ["sea-orm/cloudflare-d1", "sea-schema/cloudflare-d1"]
 entity-registry = ["sea-orm/entity-registry"]
 runtime-async-std = [
     "sea-orm/runtime-async-std",
@@ -93,4 +94,6 @@ with-time = ["sea-orm/with-time"]
 with-uuid = ["sea-orm/with-uuid"]
 
 [patch.crates-io]
-# sea-query = { path = "../sea-query" }
+sea-query = { git = "https://github.com/Summpot/sea-query.git", branch = "master" }
+sea-query-sqlx = { git = "https://github.com/Summpot/sea-query.git", branch = "master" }
+sea-schema = { git = "https://github.com/Summpot/sea-schema.git", branch = "master" }

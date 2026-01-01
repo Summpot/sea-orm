@@ -5,5 +5,8 @@ Cargo.lock
 .vscode
 .idea/*
 */.idea/*
+.env
+.env.*
+!.env.example
 .env.local
 .DS_Store

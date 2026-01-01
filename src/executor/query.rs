@@ -13,6 +13,13 @@ use crate::driver::*;
 #[cfg(feature = "sqlx-dep")]
 use sqlx::Row;
 
+// When only `cloudflare-d1` is enabled we still need some SQLx glue, but we deliberately
+// do not require enabling the internal `sqlx-dep` feature.
+#[cfg(all(feature = "cloudflare-d1", not(feature = "sqlx-dep")))]
+use crate::driver::sqlx_d1::d1_sqlx_error_to_query_err as sqlx_error_to_query_err;
+#[cfg(all(feature = "cloudflare-d1", not(feature = "sqlx-dep")))]
+use sqlx::{Column, Row};
+
 /// Defines the result of a query operation on a Model
 #[derive(Debug)]
 pub struct QueryResult {
@@ -27,6 +34,8 @@ pub(crate) enum QueryResultRow {
     SqlxPostgres(sqlx::postgres::PgRow),
     #[cfg(feature = "sqlx-sqlite")]
     SqlxSqlite(sqlx::sqlite::SqliteRow),
+    #[cfg(feature = "cloudflare-d1")]
+    SqlxD1(<::sqlx_d1::D1 as sqlx::Database>::Row),
     #[cfg(feature = "rusqlite")]
     Rusqlite(crate::driver::rusqlite::RusqliteRow),
     #[cfg(feature = "mock")]
@@ -159,6 +168,10 @@ impl QueryResult {
             QueryResultRow::SqlxSqlite(row) => {
                 row.columns().iter().map(|c| c.name().to_string()).collect()
             }
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => {
+                row.columns().iter().map(|c| c.name().to_string()).collect()
+            }
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(row) => row.columns().iter().map(|c| c.to_string()).collect(),
             #[cfg(feature = "mock")]
@@ -239,6 +252,8 @@ impl Debug for QueryResultRow {
             Self::SqlxPostgres(_) => write!(f, "QueryResultRow::SqlxPostgres cannot be inspected"),
             #[cfg(feature = "sqlx-sqlite")]
             Self::SqlxSqlite(_) => write!(f, "QueryResultRow::SqlxSqlite cannot be inspected"),
+            #[cfg(feature = "cloudflare-d1")]
+            Self::SqlxD1(_) => write!(f, "QueryResultRow::SqlxD1 cannot be inspected"),
             #[cfg(feature = "rusqlite")]
             Self::Rusqlite(row) => write!(f, "{row:?}"),
             #[cfg(feature = "mock")]
@@ -285,6 +300,10 @@ pub trait ColIdx: Debug + Copy {
     /// Type surrogate
     type SqlxSqliteIndex: sqlx::ColumnIndex<sqlx::sqlite::SqliteRow>;
 
+    #[cfg(feature = "cloudflare-d1")]
+    /// Type surrogate
+    type SqlxD1Index: sqlx::ColumnIndex<<::sqlx_d1::D1 as sqlx::Database>::Row>;
+
     #[cfg(feature = "sqlx-mysql")]
     /// Basically a no-op; only to satisfy trait bounds
     fn as_sqlx_mysql_index(&self) -> Self::SqlxMySqlIndex;
@@ -294,6 +313,10 @@ pub trait ColIdx: Debug + Copy {
     #[cfg(feature = "sqlx-sqlite")]
     /// Basically a no-op; only to satisfy trait bounds
     fn as_sqlx_sqlite_index(&self) -> Self::SqlxSqliteIndex;
+
+    #[cfg(feature = "cloudflare-d1")]
+    /// Basically a no-op; only to satisfy trait bounds
+    fn as_sqlx_d1_index(&self) -> Self::SqlxD1Index;
 
     /// Self must be `&str`, return `None` otherwise
     fn as_str(&self) -> Option<&str>;
@@ -308,6 +331,8 @@ impl ColIdx for &str {
     type SqlxPostgresIndex = Self;
     #[cfg(feature = "sqlx-sqlite")]
     type SqlxSqliteIndex = Self;
+    #[cfg(feature = "cloudflare-d1")]
+    type SqlxD1Index = Self;
 
     #[cfg(feature = "sqlx-mysql")]
     #[inline]
@@ -322,6 +347,12 @@ impl ColIdx for &str {
     #[cfg(feature = "sqlx-sqlite")]
     #[inline]
     fn as_sqlx_sqlite_index(&self) -> Self::SqlxSqliteIndex {
+        self
+    }
+
+    #[cfg(feature = "cloudflare-d1")]
+    #[inline]
+    fn as_sqlx_d1_index(&self) -> Self::SqlxD1Index {
         self
     }
 
@@ -342,6 +373,8 @@ impl ColIdx for usize {
     type SqlxPostgresIndex = Self;
     #[cfg(feature = "sqlx-sqlite")]
     type SqlxSqliteIndex = Self;
+    #[cfg(feature = "cloudflare-d1")]
+    type SqlxD1Index = Self;
 
     #[cfg(feature = "sqlx-mysql")]
     #[inline]
@@ -356,6 +389,12 @@ impl ColIdx for usize {
     #[cfg(feature = "sqlx-sqlite")]
     #[inline]
     fn as_sqlx_sqlite_index(&self) -> Self::SqlxSqliteIndex {
+        *self
+    }
+
+    #[cfg(feature = "cloudflare-d1")]
+    #[inline]
+    fn as_sqlx_d1_index(&self) -> Self::SqlxD1Index {
         *self
     }
 
@@ -388,6 +427,11 @@ macro_rules! try_getable_all {
                     #[cfg(feature = "sqlx-sqlite")]
                     QueryResultRow::SqlxSqlite(row) => row
                         .try_get::<Option<$type>, _>(idx.as_sqlx_sqlite_index())
+                        .map_err(|e| sqlx_error_to_query_err(e).into())
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+                    #[cfg(feature = "cloudflare-d1")]
+                    QueryResultRow::SqlxD1(row) => row
+                        .try_get::<Option<$type>, _>(idx.as_sqlx_d1_index())
                         .map_err(|e| sqlx_error_to_query_err(e).into())
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "rusqlite")]
@@ -434,6 +478,11 @@ macro_rules! try_getable_unsigned {
                         .try_get::<Option<$type>, _>(idx.as_sqlx_sqlite_index())
                         .map_err(|e| sqlx_error_to_query_err(e).into())
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+                    #[cfg(feature = "cloudflare-d1")]
+                    QueryResultRow::SqlxD1(row) => row
+                        .try_get::<Option<$type>, _>(idx.as_sqlx_d1_index())
+                        .map_err(|e| sqlx_error_to_query_err(e).into())
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "rusqlite")]
                     QueryResultRow::Rusqlite(row) => row
                         .try_get::<Option<$type>, _>(idx)
@@ -476,6 +525,12 @@ macro_rules! try_getable_mysql {
                     #[cfg(feature = "sqlx-sqlite")]
                     QueryResultRow::SqlxSqlite(_) => Err(type_err(format!(
                         "{} unsupported by sqlx-sqlite",
+                        stringify!($type)
+                    ))
+                    .into()),
+                    #[cfg(feature = "cloudflare-d1")]
+                    QueryResultRow::SqlxD1(_) => Err(type_err(format!(
+                        "{} unsupported by cloudflare-d1",
                         stringify!($type)
                     ))
                     .into()),
@@ -524,6 +579,12 @@ macro_rules! try_getable_postgres {
                     #[cfg(feature = "sqlx-sqlite")]
                     QueryResultRow::SqlxSqlite(_) => Err(type_err(format!(
                         "{} unsupported by sqlx-sqlite",
+                        stringify!($type)
+                    ))
+                    .into()),
+                    #[cfg(feature = "cloudflare-d1")]
+                    QueryResultRow::SqlxD1(_) => Err(type_err(format!(
+                        "{} unsupported by cloudflare-d1",
                         stringify!($type)
                     ))
                     .into()),
@@ -579,6 +640,11 @@ macro_rules! try_getable_date_time {
                             .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx)))
                             .map(|v| v.into())
                     }
+                    #[cfg(feature = "cloudflare-d1")]
+                    QueryResultRow::SqlxD1(row) => row
+                        .try_get::<Option<$type>, _>(idx.as_sqlx_d1_index())
+                        .map_err(|e| sqlx_error_to_query_err(e).into())
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "rusqlite")]
                     QueryResultRow::Rusqlite(row) => {
                         use chrono::{DateTime, Utc};
@@ -638,16 +704,358 @@ try_getable_all!(chrono::DateTime<chrono::Utc>);
 try_getable_all!(chrono::DateTime<chrono::Local>);
 
 #[cfg(feature = "with-time")]
-try_getable_all!(time::Date);
+fn parse_time_date_text(s: &str) -> Result<time::Date, TryGetError> {
+    use core::str::FromStr;
+
+    let mut parts = s.split('-');
+    let year = parts
+        .next()
+        .ok_or_else(|| type_err("Invalid time::Date".to_owned()))
+        .and_then(|v| {
+            i32::from_str(v).map_err(|_| type_err("Invalid time::Date year".to_owned()))
+        })?;
+    let month = parts
+        .next()
+        .ok_or_else(|| type_err("Invalid time::Date".to_owned()))
+        .and_then(|v| {
+            u8::from_str(v).map_err(|_| type_err("Invalid time::Date month".to_owned()))
+        })?;
+    let day = parts
+        .next()
+        .ok_or_else(|| type_err("Invalid time::Date".to_owned()))
+        .and_then(|v| u8::from_str(v).map_err(|_| type_err("Invalid time::Date day".to_owned())))?;
+
+    if parts.next().is_some() {
+        return Err(type_err("Invalid time::Date".to_owned()).into());
+    }
+
+    let month = time::Month::try_from(month)
+        .map_err(|_| type_err("Invalid time::Date month".to_owned()))?;
+
+    time::Date::from_calendar_date(year, month, day)
+        .map_err(|e| type_err(format!("Invalid time::Date: {e}")))
+        .map_err(Into::into)
+}
 
 #[cfg(feature = "with-time")]
-try_getable_all!(time::Time);
+fn parse_time_time_text(s: &str) -> Result<time::Time, TryGetError> {
+    use core::str::FromStr;
+
+    let (hms, frac) = match s.split_once('.') {
+        Some((hms, frac)) => (hms, Some(frac)),
+        None => (s, None),
+    };
+
+    let mut parts = hms.split(':');
+    let hour = parts
+        .next()
+        .ok_or_else(|| type_err("Invalid time::Time".to_owned()))
+        .and_then(|v| u8::from_str(v).map_err(|_| type_err("Invalid time::Time hour".to_owned())))?;
+    let minute = parts
+        .next()
+        .ok_or_else(|| type_err("Invalid time::Time".to_owned()))
+        .and_then(|v| {
+            u8::from_str(v).map_err(|_| type_err("Invalid time::Time minute".to_owned()))
+        })?;
+    let second = parts
+        .next()
+        .ok_or_else(|| type_err("Invalid time::Time".to_owned()))
+        .and_then(|v| {
+            u8::from_str(v).map_err(|_| type_err("Invalid time::Time second".to_owned()))
+        })?;
+
+    if parts.next().is_some() {
+        return Err(type_err("Invalid time::Time".to_owned()).into());
+    }
+
+    let nanos = if let Some(frac) = frac {
+        let frac = frac.trim();
+        if frac.is_empty() {
+            0u32
+        } else {
+            let digits = frac.chars().take(9).collect::<String>();
+            let mut n = u32::from_str(&digits)
+                .map_err(|_| type_err("Invalid time::Time fractional seconds".to_owned()))?;
+            let missing = 9usize.saturating_sub(digits.len());
+            for _ in 0..missing {
+                n *= 10;
+            }
+            n
+        }
+    } else {
+        0u32
+    };
+
+    time::Time::from_hms_nano(hour, minute, second, nanos)
+        .map_err(|e| type_err(format!("Invalid time::Time: {e}")))
+        .map_err(Into::into)
+}
 
 #[cfg(feature = "with-time")]
-try_getable_all!(time::PrimitiveDateTime);
+fn parse_time_primitive_date_time_text(s: &str) -> Result<time::PrimitiveDateTime, TryGetError> {
+    let (date, time) = s
+        .split_once(' ')
+        .or_else(|| s.split_once('T'))
+        .ok_or_else(|| type_err("Invalid time::PrimitiveDateTime".to_owned()))?;
+
+    let date = parse_time_date_text(date.trim())?;
+    let time = parse_time_time_text(time.trim())?;
+    Ok(time::PrimitiveDateTime::new(date, time))
+}
 
 #[cfg(feature = "with-time")]
-try_getable_all!(time::OffsetDateTime);
+fn parse_time_offset_date_time_text(s: &str) -> Result<time::OffsetDateTime, TryGetError> {
+    use core::str::FromStr;
+
+    let s = s.trim();
+    if let Some(prefix) = s.strip_suffix('Z') {
+        let pdt = parse_time_primitive_date_time_text(prefix.trim())?;
+        return Ok(pdt.assume_utc());
+    }
+
+    // Avoid matching '-' in the date portion by searching after "YYYY-MM-DD".
+    let search_start = 10usize.min(s.len());
+    let rel_pos = s[search_start..]
+        .rfind(|c: char| c == '+' || c == '-')
+        .ok_or_else(|| type_err("Invalid time::OffsetDateTime".to_owned()))?;
+    let pos = search_start + rel_pos;
+
+    let (dt_part, offset_part) = s.split_at(pos);
+    let dt_part = dt_part.trim_end();
+    let offset_part = offset_part.trim();
+
+    let sign = if offset_part.starts_with('-') { -1i8 } else { 1i8 };
+    let offset_digits = offset_part
+        .strip_prefix(['+', '-'])
+        .ok_or_else(|| type_err("Invalid time::OffsetDateTime offset".to_owned()))?;
+
+    let (hours_str, minutes_str, seconds_str) = if offset_digits.contains(':') {
+        let mut parts = offset_digits.split(':');
+        let h = parts.next().unwrap_or("");
+        let m = parts.next().unwrap_or("0");
+        let s = parts.next().unwrap_or("0");
+        if parts.next().is_some() {
+            return Err(type_err("Invalid time::OffsetDateTime offset".to_owned()).into());
+        }
+        (h, m, s)
+    } else {
+        match offset_digits.len() {
+            2 => (offset_digits, "0", "0"),
+            4 => (&offset_digits[..2], &offset_digits[2..], "0"),
+            6 => (&offset_digits[..2], &offset_digits[2..4], &offset_digits[4..]),
+            _ => return Err(type_err("Invalid time::OffsetDateTime offset".to_owned()).into()),
+        }
+    };
+
+    let hours_u8 = u8::from_str(hours_str)
+        .map_err(|_| type_err("Invalid time::OffsetDateTime offset hours".to_owned()))?;
+    let minutes_u8 = u8::from_str(minutes_str)
+        .map_err(|_| type_err("Invalid time::OffsetDateTime offset minutes".to_owned()))?;
+    let seconds_u8 = u8::from_str(seconds_str)
+        .map_err(|_| type_err("Invalid time::OffsetDateTime offset seconds".to_owned()))?;
+
+    let offset = time::UtcOffset::from_hms(
+        (hours_u8 as i8) * sign,
+        (minutes_u8 as i8) * sign,
+        (seconds_u8 as i8) * sign,
+    )
+    .map_err(|e| type_err(format!("Invalid time::OffsetDateTime offset: {e}")))?;
+
+    let pdt = parse_time_primitive_date_time_text(dt_part)?;
+    Ok(pdt.assume_offset(offset))
+}
+
+#[cfg(feature = "with-time")]
+impl TryGetable for time::Date {
+    #[allow(unused_variables)]
+    fn try_get_by<I: ColIdx>(res: &QueryResult, idx: I) -> Result<Self, TryGetError> {
+        match &res.row {
+            #[cfg(feature = "sqlx-mysql")]
+            QueryResultRow::SqlxMySql(row) => row
+                .try_get::<Option<time::Date>, _>(idx.as_sqlx_mysql_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-postgres")]
+            QueryResultRow::SqlxPostgres(row) => row
+                .try_get::<Option<time::Date>, _>(idx.as_sqlx_postgres_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-sqlite")]
+            QueryResultRow::SqlxSqlite(row) => row
+                .try_get::<Option<time::Date>, _>(idx.as_sqlx_sqlite_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => {
+                let val: Option<String> = row
+                    .try_get(idx.as_sqlx_d1_index())
+                    .map_err(|e| TryGetError::DbErr(sqlx_error_to_query_err(e)))?;
+                let val = val.ok_or_else(|| err_null_idx_col(idx))?;
+                parse_time_date_text(&val)
+            }
+            #[cfg(feature = "rusqlite")]
+            QueryResultRow::Rusqlite(row) => row
+                .try_get::<Option<time::Date>, _>(idx)
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "mock")]
+            QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[cfg(feature = "proxy")]
+            QueryResultRow::Proxy(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(feature = "with-time")]
+impl TryGetable for time::Time {
+    #[allow(unused_variables)]
+    fn try_get_by<I: ColIdx>(res: &QueryResult, idx: I) -> Result<Self, TryGetError> {
+        match &res.row {
+            #[cfg(feature = "sqlx-mysql")]
+            QueryResultRow::SqlxMySql(row) => row
+                .try_get::<Option<time::Time>, _>(idx.as_sqlx_mysql_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-postgres")]
+            QueryResultRow::SqlxPostgres(row) => row
+                .try_get::<Option<time::Time>, _>(idx.as_sqlx_postgres_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-sqlite")]
+            QueryResultRow::SqlxSqlite(row) => row
+                .try_get::<Option<time::Time>, _>(idx.as_sqlx_sqlite_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => {
+                let val: Option<String> = row
+                    .try_get(idx.as_sqlx_d1_index())
+                    .map_err(|e| TryGetError::DbErr(sqlx_error_to_query_err(e)))?;
+                let val = val.ok_or_else(|| err_null_idx_col(idx))?;
+                parse_time_time_text(&val)
+            }
+            #[cfg(feature = "rusqlite")]
+            QueryResultRow::Rusqlite(row) => row
+                .try_get::<Option<time::Time>, _>(idx)
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "mock")]
+            QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[cfg(feature = "proxy")]
+            QueryResultRow::Proxy(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(feature = "with-time")]
+impl TryGetable for time::PrimitiveDateTime {
+    #[allow(unused_variables)]
+    fn try_get_by<I: ColIdx>(res: &QueryResult, idx: I) -> Result<Self, TryGetError> {
+        match &res.row {
+            #[cfg(feature = "sqlx-mysql")]
+            QueryResultRow::SqlxMySql(row) => row
+                .try_get::<Option<time::PrimitiveDateTime>, _>(idx.as_sqlx_mysql_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-postgres")]
+            QueryResultRow::SqlxPostgres(row) => row
+                .try_get::<Option<time::PrimitiveDateTime>, _>(idx.as_sqlx_postgres_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-sqlite")]
+            QueryResultRow::SqlxSqlite(row) => row
+                .try_get::<Option<time::PrimitiveDateTime>, _>(idx.as_sqlx_sqlite_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => {
+                let val: Option<String> = row
+                    .try_get(idx.as_sqlx_d1_index())
+                    .map_err(|e| TryGetError::DbErr(sqlx_error_to_query_err(e)))?;
+                let val = val.ok_or_else(|| err_null_idx_col(idx))?;
+                parse_time_primitive_date_time_text(&val)
+            }
+            #[cfg(feature = "rusqlite")]
+            QueryResultRow::Rusqlite(row) => row
+                .try_get::<Option<time::PrimitiveDateTime>, _>(idx)
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "mock")]
+            QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[cfg(feature = "proxy")]
+            QueryResultRow::Proxy(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(feature = "with-time")]
+impl TryGetable for time::OffsetDateTime {
+    #[allow(unused_variables)]
+    fn try_get_by<I: ColIdx>(res: &QueryResult, idx: I) -> Result<Self, TryGetError> {
+        match &res.row {
+            #[cfg(feature = "sqlx-mysql")]
+            QueryResultRow::SqlxMySql(row) => row
+                .try_get::<Option<time::OffsetDateTime>, _>(idx.as_sqlx_mysql_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-postgres")]
+            QueryResultRow::SqlxPostgres(row) => row
+                .try_get::<Option<time::OffsetDateTime>, _>(idx.as_sqlx_postgres_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "sqlx-sqlite")]
+            QueryResultRow::SqlxSqlite(row) => row
+                .try_get::<Option<time::OffsetDateTime>, _>(idx.as_sqlx_sqlite_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => {
+                let val: Option<String> = row
+                    .try_get(idx.as_sqlx_d1_index())
+                    .map_err(|e| TryGetError::DbErr(sqlx_error_to_query_err(e)))?;
+                let val = val.ok_or_else(|| err_null_idx_col(idx))?;
+                parse_time_offset_date_time_text(&val)
+            }
+            #[cfg(feature = "rusqlite")]
+            QueryResultRow::Rusqlite(row) => row
+                .try_get::<Option<time::OffsetDateTime>, _>(idx)
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "mock")]
+            QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[cfg(feature = "proxy")]
+            QueryResultRow::Proxy(row) => row.try_get(idx).map_err(|e| {
+                debug_print!("{:#?}", e.to_string());
+                err_null_idx_col(idx)
+            }),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
+        }
+    }
+}
 
 #[cfg(feature = "with-rust_decimal")]
 use rust_decimal::Decimal;
@@ -684,6 +1092,11 @@ impl TryGetable for Decimal {
                     None => Err(err_null_idx_col(idx)),
                 }
             }
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => row
+                .try_get::<Option<Decimal>, _>(idx.as_sqlx_d1_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(row) => {
                 let val: Option<f64> = row.try_get(idx)?;
@@ -739,6 +1152,23 @@ impl TryGetable for BigDecimal {
             QueryResultRow::SqlxSqlite(row) => {
                 let val: Option<f64> = row
                     .try_get(idx.as_sqlx_sqlite_index())
+                    .map_err(sqlx_error_to_query_err)?;
+                match val {
+                    Some(v) => BigDecimal::try_from(v).map_err(|e| {
+                        DbErr::TryIntoErr {
+                            from: "f64",
+                            into: "BigDecimal",
+                            source: Arc::new(e),
+                        }
+                        .into()
+                    }),
+                    None => Err(err_null_idx_col(idx)),
+                }
+            }
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => {
+                let val: Option<f64> = row
+                    .try_get(idx.as_sqlx_d1_index())
                     .map_err(sqlx_error_to_query_err)?;
                 match val {
                     Some(v) => BigDecimal::try_from(v).map_err(|e| {
@@ -834,6 +1264,11 @@ macro_rules! try_getable_uuid {
                         .try_get::<Option<uuid::Uuid>, _>(idx.as_sqlx_sqlite_index())
                         .map_err(|e| sqlx_error_to_query_err(e).into())
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+                    #[cfg(feature = "cloudflare-d1")]
+                    QueryResultRow::SqlxD1(row) => row
+                        .try_get::<Option<uuid::Uuid>, _>(idx.as_sqlx_d1_index())
+                        .map_err(|e| sqlx_error_to_query_err(e).into())
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "rusqlite")]
                     QueryResultRow::Rusqlite(row) => row
                         .try_get::<Option<uuid::Uuid>, _>(idx)
@@ -915,6 +1350,11 @@ impl TryGetable for u32 {
                 .try_get::<Option<u32>, _>(idx.as_sqlx_sqlite_index())
                 .map_err(|e| sqlx_error_to_query_err(e).into())
                 .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => row
+                .try_get::<Option<u32>, _>(idx.as_sqlx_d1_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(row) => row
                 .try_get::<Option<u32>, _>(idx)
@@ -964,6 +1404,11 @@ impl TryGetable for String {
             #[cfg(feature = "sqlx-sqlite")]
             QueryResultRow::SqlxSqlite(row) => row
                 .try_get::<Option<String>, _>(idx.as_sqlx_sqlite_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => row
+                .try_get::<Option<String>, _>(idx.as_sqlx_d1_index())
                 .map_err(|e| sqlx_error_to_query_err(e).into())
                 .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
             #[cfg(feature = "rusqlite")]
@@ -1016,6 +1461,12 @@ mod postgres_array {
                         #[cfg(feature = "sqlx-sqlite")]
                         QueryResultRow::SqlxSqlite(_) => Err(type_err(format!(
                             "{} unsupported by sqlx-sqlite",
+                            stringify!($type)
+                        ))
+                        .into()),
+                        #[cfg(feature = "cloudflare-d1")]
+                        QueryResultRow::SqlxD1(_) => Err(type_err(format!(
+                            "{} unsupported by cloudflare-d1",
                             stringify!($type)
                         ))
                         .into()),
@@ -1121,6 +1572,12 @@ mod postgres_array {
                             stringify!($type)
                         ))
                         .into()),
+                        #[cfg(feature = "cloudflare-d1")]
+                        QueryResultRow::SqlxD1(_) => Err(type_err(format!(
+                            "{} unsupported by cloudflare-d1",
+                            stringify!($type)
+                        ))
+                        .into()),
                         #[cfg(feature = "rusqlite")]
                         QueryResultRow::Rusqlite(_) => Err(type_err(format!(
                             "{} unsupported by rusqlite",
@@ -1189,6 +1646,12 @@ mod postgres_array {
                     stringify!($type)
                 ))
                 .into()),
+                #[cfg(feature = "cloudflare-d1")]
+                QueryResultRow::SqlxD1(_) => Err(type_err(format!(
+                    "{} unsupported by cloudflare-d1",
+                    stringify!($type)
+                ))
+                .into()),
                 #[cfg(feature = "rusqlite")]
                 QueryResultRow::Rusqlite(_) => {
                     Err(type_err(format!("{} unsupported by rusqlite", stringify!($type))).into())
@@ -1230,6 +1693,8 @@ impl TryGetable for pgvector::Vector {
             QueryResultRow::SqlxSqlite(_) => {
                 Err(type_err("Vector unsupported by sqlx-sqlite").into())
             }
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(_) => Err(type_err("Vector unsupported by cloudflare-d1").into()),
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(_) => Err(type_err("Vector unsupported by rusqlite").into()),
             #[cfg(feature = "mock")]
@@ -1449,6 +1914,11 @@ where
             #[cfg(feature = "sqlx-sqlite")]
             QueryResultRow::SqlxSqlite(row) => row
                 .try_get::<Option<sqlx::types::Json<Self>>, _>(idx.as_sqlx_sqlite_index())
+                .map_err(|e| sqlx_error_to_query_err(e).into())
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx)).map(|json| json.0)),
+            #[cfg(feature = "cloudflare-d1")]
+            QueryResultRow::SqlxD1(row) => row
+                .try_get::<Option<sqlx::types::Json<Self>>, _>(idx.as_sqlx_d1_index())
                 .map_err(|e| sqlx_error_to_query_err(e).into())
                 .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx)).map(|json| json.0)),
             #[cfg(feature = "rusqlite")]
@@ -1751,5 +2221,34 @@ mod tests {
             query_result.column_names(),
             vec!["id".to_owned(), "name".to_owned()]
         );
+    }
+
+    #[cfg(feature = "with-time")]
+    #[test]
+    fn d1_time_text_parsers_roundtrip() {
+        let date = time::Date::from_calendar_date(2024, time::Month::January, 2).unwrap();
+        assert_eq!(parse_time_date_text(&date.to_string()).unwrap(), date);
+
+        let time = time::Time::from_hms(3, 4, 5).unwrap();
+        assert_eq!(parse_time_time_text(&time.to_string()).unwrap(), time);
+
+        let time_ns = time::Time::from_hms_nano(3, 4, 5, 123_456_789).unwrap();
+        assert_eq!(parse_time_time_text(&time_ns.to_string()).unwrap(), time_ns);
+
+        let pdt = time::PrimitiveDateTime::new(date, time);
+        assert_eq!(
+            parse_time_primitive_date_time_text(&pdt.to_string()).unwrap(),
+            pdt
+        );
+
+        let odt_utc = pdt.assume_utc();
+        assert_eq!(
+            parse_time_offset_date_time_text(&odt_utc.to_string()).unwrap(),
+            odt_utc
+        );
+
+        let offset = time::UtcOffset::from_hms(9, 0, 0).unwrap();
+        let odt = pdt.assume_offset(offset);
+        assert_eq!(parse_time_offset_date_time_text(&odt.to_string()).unwrap(), odt);
     }
 }

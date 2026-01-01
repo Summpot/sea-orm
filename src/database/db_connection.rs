@@ -44,6 +44,10 @@ pub enum DatabaseConnectionType {
     #[cfg(feature = "sqlx-sqlite")]
     SqlxSqlitePoolConnection(crate::SqlxSqlitePoolConnection),
 
+    /// Cloudflare D1 connection (via `sqlx-d1`)
+    #[cfg(feature = "cloudflare-d1")]
+    SqlxD1Connection(crate::SqlxD1Connection),
+
     /// SQLite database connection sharable across threads
     #[cfg(feature = "rusqlite")]
     RusqliteSharedConnection(RusqliteSharedConnection),
@@ -103,6 +107,8 @@ pub(crate) enum InnerConnection {
     Postgres(PoolConnection<sqlx::Postgres>),
     #[cfg(feature = "sqlx-sqlite")]
     Sqlite(PoolConnection<sqlx::Sqlite>),
+    #[cfg(feature = "cloudflare-d1")]
+    D1(::sqlx_d1::D1Connection),
     #[cfg(feature = "rusqlite")]
     Rusqlite(RusqliteInnerConnection),
     #[cfg(feature = "mock")]
@@ -123,6 +129,8 @@ impl Debug for DatabaseConnectionType {
                 Self::SqlxPostgresPoolConnection(_) => "SqlxPostgresPoolConnection",
                 #[cfg(feature = "sqlx-sqlite")]
                 Self::SqlxSqlitePoolConnection(_) => "SqlxSqlitePoolConnection",
+                #[cfg(feature = "cloudflare-d1")]
+                Self::SqlxD1Connection(_) => "SqlxD1Connection",
                 #[cfg(feature = "rusqlite")]
                 Self::RusqliteSharedConnection(_) => "RusqliteSharedConnection",
                 #[cfg(feature = "mock")]
@@ -151,6 +159,8 @@ impl ConnectionTrait for DatabaseConnection {
             DatabaseConnectionType::SqlxPostgresPoolConnection(conn) => conn.execute(stmt).await,
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.execute(stmt).await,
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.execute(stmt).await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.execute(stmt),
             #[cfg(feature = "mock")]
@@ -177,6 +187,8 @@ impl ConnectionTrait for DatabaseConnection {
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => {
                 conn.execute_unprepared(sql).await
             }
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.execute_unprepared(sql).await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.execute_unprepared(sql),
             #[cfg(feature = "mock")]
@@ -205,6 +217,8 @@ impl ConnectionTrait for DatabaseConnection {
             DatabaseConnectionType::SqlxPostgresPoolConnection(conn) => conn.query_one(stmt).await,
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.query_one(stmt).await,
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.query_one(stmt).await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.query_one(stmt),
             #[cfg(feature = "mock")]
@@ -225,6 +239,8 @@ impl ConnectionTrait for DatabaseConnection {
             DatabaseConnectionType::SqlxPostgresPoolConnection(conn) => conn.query_all(stmt).await,
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.query_all(stmt).await,
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.query_all(stmt).await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.query_all(stmt),
             #[cfg(feature = "mock")]
@@ -269,6 +285,8 @@ impl StreamTrait for DatabaseConnection {
                 DatabaseConnectionType::SqlxPostgresPoolConnection(conn) => conn.stream(stmt).await,
                 #[cfg(feature = "sqlx-sqlite")]
                 DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.stream(stmt).await,
+                #[cfg(feature = "cloudflare-d1")]
+                DatabaseConnectionType::SqlxD1Connection(conn) => conn.stream(stmt).await,
                 #[cfg(feature = "rusqlite")]
                 DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.stream(stmt),
                 #[cfg(feature = "mock")]
@@ -300,6 +318,8 @@ impl TransactionTrait for DatabaseConnection {
             }
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.begin(None, None).await,
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.begin(None, None).await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.begin(None, None),
             #[cfg(feature = "mock")]
@@ -331,6 +351,10 @@ impl TransactionTrait for DatabaseConnection {
             }
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => {
+                conn.begin(_isolation_level, _access_mode).await
+            }
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => {
                 conn.begin(_isolation_level, _access_mode).await
             }
             #[cfg(feature = "rusqlite")]
@@ -372,6 +396,10 @@ impl TransactionTrait for DatabaseConnection {
             }
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => {
+                conn.transaction(_callback, None, None).await
+            }
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => {
                 conn.transaction(_callback, None, None).await
             }
             #[cfg(feature = "rusqlite")]
@@ -426,6 +454,11 @@ impl TransactionTrait for DatabaseConnection {
             }
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => {
+                conn.transaction(_callback, _isolation_level, _access_mode)
+                    .await
+            }
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => {
                 conn.transaction(_callback, _isolation_level, _access_mode)
                     .await
             }
@@ -547,6 +580,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxPostgresPoolConnection(_) => DbBackend::Postgres,
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(_) => DbBackend::Sqlite,
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(_) => DbBackend::Sqlite,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(_) => DbBackend::Sqlite,
             #[cfg(feature = "mock")]
@@ -588,6 +623,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => {
                 conn.set_metric_callback(_callback)
             }
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.set_metric_callback(_callback),
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => {
                 conn.set_metric_callback(_callback)
@@ -605,6 +642,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxPostgresPoolConnection(conn) => conn.ping().await,
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.ping().await,
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.ping().await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.ping(),
             #[cfg(feature = "mock")]
@@ -630,6 +669,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxPostgresPoolConnection(conn) => conn.close_by_ref().await,
             #[cfg(feature = "sqlx-sqlite")]
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.close_by_ref().await,
+            #[cfg(feature = "cloudflare-d1")]
+            DatabaseConnectionType::SqlxD1Connection(conn) => conn.close_by_ref().await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.close_by_ref(),
             #[cfg(feature = "mock")]

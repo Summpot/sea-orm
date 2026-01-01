@@ -140,6 +140,13 @@ impl Database {
         if DbBackend::Sqlite.is_prefix_of(&opt.url) {
             return crate::SqlxSqliteConnector::connect(opt).await;
         }
+
+        // Cloudflare D1 (primarily for native local development against Miniflare's D1 emulator).
+        // In Workers (wasm32), prefer `Database::connect_d1`.
+        #[cfg(feature = "cloudflare-d1")]
+        if opt.url.starts_with("d1:") {
+            return crate::SqlxD1Connector::connect_with_options(opt).await;
+        }
         #[cfg(feature = "rusqlite")]
         if DbBackend::Sqlite.is_prefix_of(&opt.url) {
             return crate::driver::rusqlite::RusqliteConnector::connect(opt);
@@ -153,6 +160,15 @@ impl Database {
             "The connection string '{}' has no supporting driver.",
             opt.url
         )))
+    }
+
+    /// Create a [DatabaseConnection] backed by a Cloudflare D1 binding.
+    ///
+    /// This is the intended entry-point for Cloudflare Workers (`wasm32-unknown-unknown`).
+    /// It does **not** require Tokio/async-std.
+    #[cfg(feature = "cloudflare-d1")]
+    pub async fn connect_d1(d1: worker::D1Database) -> Result<DatabaseConnection, DbErr> {
+        crate::SqlxD1Connector::connect(d1)
     }
 
     /// Method to create a [DatabaseConnection] on a proxy database

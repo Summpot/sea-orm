@@ -7,8 +7,6 @@ use crate::{
 #[cfg(feature = "sqlx-dep")]
 use crate::{sqlx_error_to_exec_err, sqlx_error_to_query_err};
 use futures_util::lock::Mutex;
-#[cfg(feature = "sqlx-dep")]
-use sqlx::TransactionManager;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tracing::instrument;
 
@@ -90,6 +88,20 @@ impl DatabaseTransaction {
                         .await
                         .map_err(sqlx_error_to_query_err)
                 }
+                #[cfg(feature = "cloudflare-d1")]
+                InnerConnection::D1(c) => {
+                    // D1 does not support configuring transactions; sqlx-d1 implements
+                    // transactions as no-ops. We still call into the transaction manager to
+                    // keep behavior consistent.
+                    if isolation_level.is_some() || access_mode.is_some() {
+                        debug_print!(
+                            "D1 does not support configuring transactions; settings will be ignored"
+                        );
+                    }
+
+                    let _ = c;
+                    Ok(())
+                }
                 #[cfg(feature = "rusqlite")]
                 InnerConnection::Rusqlite(c) => c.begin(),
                 #[cfg(feature = "mock")]
@@ -161,6 +173,11 @@ impl DatabaseTransaction {
                     .await
                     .map_err(sqlx_error_to_query_err)
             }
+            #[cfg(feature = "cloudflare-d1")]
+            InnerConnection::D1(c) => {
+                let _ = c;
+                Ok(())
+            }
             #[cfg(feature = "rusqlite")]
             InnerConnection::Rusqlite(c) => c.commit(),
             #[cfg(feature = "mock")]
@@ -208,6 +225,11 @@ impl DatabaseTransaction {
                     .await
                     .map_err(sqlx_error_to_query_err)
             }
+            #[cfg(feature = "cloudflare-d1")]
+            InnerConnection::D1(c) => {
+                let _ = c;
+                Ok(())
+            }
             #[cfg(feature = "rusqlite")]
             InnerConnection::Rusqlite(c) => c.rollback(),
             #[cfg(feature = "mock")]
@@ -244,6 +266,10 @@ impl DatabaseTransaction {
                     #[cfg(feature = "sqlx-sqlite")]
                     InnerConnection::Sqlite(c) => {
                         <sqlx::Sqlite as sqlx::Database>::TransactionManager::start_rollback(c);
+                    }
+                    #[cfg(feature = "cloudflare-d1")]
+                    InnerConnection::D1(c) => {
+                        let _ = c;
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(c) => {
@@ -331,6 +357,17 @@ impl ConnectionTrait for DatabaseTransaction {
                 })
                 .map_err(sqlx_error_to_exec_err)
             }
+            #[cfg(feature = "cloudflare-d1")]
+            InnerConnection::D1(conn) => {
+                let query = crate::driver::sqlx_d1::sqlx_query(&stmt)?;
+                let conn: &sqlx_d1::D1Connection = &*conn;
+                crate::metric::metric!(self.metric_callback, &stmt, {
+                    query.execute(conn).await.map(|res| crate::ExecResult {
+                        result: crate::ExecResultHolder::SqlxD1(res),
+                    })
+                })
+                .map_err(crate::driver::sqlx_d1::d1_sqlx_error_to_exec_err)
+            }
             #[cfg(feature = "rusqlite")]
             InnerConnection::Rusqlite(conn) => conn.execute(stmt, &self.metric_callback),
             #[cfg(feature = "mock")]
@@ -376,6 +413,15 @@ impl ConnectionTrait for DatabaseTransaction {
                     .await
                     .map(Into::into)
                     .map_err(sqlx_error_to_exec_err)
+            }
+            #[cfg(feature = "cloudflare-d1")]
+            InnerConnection::D1(conn) => {
+                let conn: &sqlx_d1::D1Connection = &*conn;
+                crate::driver::sqlx_d1::d1_execute_unprepared(conn, sql)
+                    .await
+                    .map(|res| crate::ExecResult {
+                        result: crate::ExecResultHolder::SqlxD1(res),
+                    })
             }
             #[cfg(feature = "rusqlite")]
             InnerConnection::Rusqlite(conn) => conn.execute_unprepared(sql),
@@ -437,6 +483,22 @@ impl ConnectionTrait for DatabaseTransaction {
                     )
                 })
             }
+            #[cfg(feature = "cloudflare-d1")]
+            InnerConnection::D1(conn) => {
+                let query = crate::driver::sqlx_d1::sqlx_query(&stmt)?;
+                let conn: &sqlx_d1::D1Connection = &*conn;
+                crate::metric::metric!(self.metric_callback, &stmt, {
+                    query
+                        .fetch_optional(conn)
+                        .await
+                        .map(|row| {
+                            row.map(|row| crate::QueryResult {
+                                row: crate::QueryResultRow::SqlxD1(row),
+                            })
+                        })
+                        .map_err(crate::driver::sqlx_d1::d1_sqlx_error_to_query_err)
+                })
+            }
             #[cfg(feature = "rusqlite")]
             InnerConnection::Rusqlite(conn) => conn.query_one(stmt, &self.metric_callback),
             #[cfg(feature = "mock")]
@@ -493,6 +555,24 @@ impl ConnectionTrait for DatabaseTransaction {
                         .await
                         .map(|rows| rows.into_iter().map(|r| r.into()).collect())
                         .map_err(sqlx_error_to_query_err)
+                })
+            }
+            #[cfg(feature = "cloudflare-d1")]
+            InnerConnection::D1(conn) => {
+                let query = crate::driver::sqlx_d1::sqlx_query(&stmt)?;
+                let conn: &sqlx_d1::D1Connection = &*conn;
+                crate::metric::metric!(self.metric_callback, &stmt, {
+                    query
+                        .fetch_all(conn)
+                        .await
+                        .map(|rows| {
+                            rows.into_iter()
+                                .map(|row| crate::QueryResult {
+                                    row: crate::QueryResultRow::SqlxD1(row),
+                                })
+                                .collect()
+                        })
+                        .map_err(crate::driver::sqlx_d1::d1_sqlx_error_to_query_err)
                 })
             }
             #[cfg(feature = "rusqlite")]

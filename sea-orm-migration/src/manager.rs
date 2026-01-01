@@ -123,6 +123,8 @@ impl SchemaManager<'_> {
             DbBackend::Postgres => sea_schema::postgres::Postgres.has_column(_table, _column),
             #[cfg(feature = "sqlx-sqlite")]
             DbBackend::Sqlite => sea_schema::sqlite::Sqlite.has_column(_table, _column),
+            #[cfg(all(feature = "cloudflare-d1", not(feature = "sqlx-sqlite")))]
+            DbBackend::Sqlite => sea_schema::d1::D1.has_column(_table, _column),
             #[allow(unreachable_patterns)]
             other => {
                 return Err(DbErr::BackendNotSupported {
@@ -154,6 +156,8 @@ impl SchemaManager<'_> {
             DbBackend::Postgres => sea_schema::postgres::Postgres.has_index(_table, _index),
             #[cfg(feature = "sqlx-sqlite")]
             DbBackend::Sqlite => sea_schema::sqlite::Sqlite.has_index(_table, _index),
+            #[cfg(all(feature = "cloudflare-d1", not(feature = "sqlx-sqlite")))]
+            DbBackend::Sqlite => sea_schema::d1::D1.has_index(_table, _index),
             #[allow(unreachable_patterns)]
             other => {
                 return Err(DbErr::BackendNotSupported {
@@ -186,6 +190,8 @@ where
         DbBackend::Postgres => sea_schema::postgres::Postgres.has_table(_table),
         #[cfg(feature = "sqlx-sqlite")]
         DbBackend::Sqlite => sea_schema::sqlite::Sqlite.has_table(_table),
+        #[cfg(all(feature = "cloudflare-d1", not(feature = "sqlx-sqlite")))]
+        DbBackend::Sqlite => sea_schema::d1::D1.has_table(_table),
         #[allow(unreachable_patterns)]
         other => {
             return Err(DbErr::BackendNotSupported {

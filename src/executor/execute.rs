@@ -8,7 +8,6 @@ pub struct ExecResult {
 
 /// Holds a result depending on the database backend chosen by the feature flag
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug)]
 pub(crate) enum ExecResultHolder {
     /// Holds the result of executing an operation on a MySQL database
     #[cfg(feature = "sqlx-mysql")]
@@ -19,6 +18,9 @@ pub(crate) enum ExecResultHolder {
     /// Holds the result of executing an operation on a SQLite database
     #[cfg(feature = "sqlx-sqlite")]
     SqlxSqlite(sqlx::sqlite::SqliteQueryResult),
+    /// Holds the result of executing an operation on a Cloudflare D1 database
+    #[cfg(feature = "cloudflare-d1")]
+    SqlxD1(<::sqlx_d1::D1 as sqlx::Database>::QueryResult),
     /// Holds the result of executing an operation on a SQLite database
     #[cfg(feature = "rusqlite")]
     Rusqlite(crate::driver::rusqlite::RusqliteExecResult),
@@ -28,6 +30,29 @@ pub(crate) enum ExecResultHolder {
     /// Holds the result of executing an operation on the Proxy database
     #[cfg(feature = "proxy")]
     Proxy(crate::ProxyExecResult),
+}
+
+impl std::fmt::Debug for ExecResultHolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "sqlx-mysql")]
+            Self::SqlxMySql(result) => write!(f, "{result:?}"),
+            #[cfg(feature = "sqlx-postgres")]
+            Self::SqlxPostgres(result) => write!(f, "{result:?}"),
+            #[cfg(feature = "sqlx-sqlite")]
+            Self::SqlxSqlite(result) => write!(f, "{result:?}"),
+            #[cfg(feature = "cloudflare-d1")]
+            Self::SqlxD1(_) => write!(f, "ExecResultHolder::SqlxD1(..)"),
+            #[cfg(feature = "rusqlite")]
+            Self::Rusqlite(result) => write!(f, "{result:?}"),
+            #[cfg(feature = "mock")]
+            Self::Mock(result) => write!(f, "{result:?}"),
+            #[cfg(feature = "proxy")]
+            Self::Proxy(result) => write!(f, "{result:?}"),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
+        }
+    }
 }
 
 // ExecResult //
@@ -51,6 +76,15 @@ impl ExecResult {
                 let last_insert_rowid = result.last_insert_rowid();
                 if last_insert_rowid < 0 {
                     unreachable!("negative last_insert_rowid")
+                } else {
+                    last_insert_rowid as u64
+                }
+            }
+            #[cfg(feature = "cloudflare-d1")]
+            ExecResultHolder::SqlxD1(result) => {
+                let last_insert_rowid = result.last_insert_row_id;
+                if last_insert_rowid < 0 {
+                    unreachable!("negative last_insert_row_id")
                 } else {
                     last_insert_rowid as u64
                 }
@@ -82,6 +116,8 @@ impl ExecResult {
             ExecResultHolder::SqlxPostgres(result) => result.rows_affected(),
             #[cfg(feature = "sqlx-sqlite")]
             ExecResultHolder::SqlxSqlite(result) => result.rows_affected(),
+            #[cfg(feature = "cloudflare-d1")]
+            ExecResultHolder::SqlxD1(result) => result.rows_affected as u64,
             #[cfg(feature = "rusqlite")]
             ExecResultHolder::Rusqlite(result) => result.rows_affected,
             #[cfg(feature = "mock")]

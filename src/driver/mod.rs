@@ -8,6 +8,8 @@ pub(crate) mod rusqlite;
 mod sqlite;
 #[cfg(feature = "sqlx-dep")]
 mod sqlx_common;
+#[cfg(feature = "cloudflare-d1")]
+pub(crate) mod sqlx_d1;
 #[cfg(feature = "sqlx-mysql")]
 pub(crate) mod sqlx_mysql;
 #[cfg(feature = "sqlx-postgres")]
@@ -21,6 +23,8 @@ pub use mock::*;
 pub use proxy::*;
 #[cfg(feature = "sqlx-dep")]
 pub(crate) use sqlx_common::*;
+#[cfg(feature = "cloudflare-d1")]
+pub use sqlx_d1::*;
 #[cfg(feature = "sqlx-mysql")]
 pub use sqlx_mysql::*;
 #[cfg(feature = "sqlx-postgres")]

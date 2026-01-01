@@ -100,6 +100,18 @@ impl TransactionStream<'_> {
                     let elapsed = start.map(|s| s.elapsed().unwrap_or_default());
                     MetricStream::new(_metric_callback, stmt, elapsed, stream)
                 }
+                #[cfg(feature = "cloudflare-d1")]
+                InnerConnection::D1(_) => {
+                    let start = _metric_callback.is_some().then(std::time::SystemTime::now);
+                    let stream = futures_util::stream::once(async {
+                        Err(DbErr::BackendNotSupported {
+                            db: "D1",
+                            ctx: "TransactionStream",
+                        })
+                    });
+                    let elapsed = start.map(|s| s.elapsed().unwrap_or_default());
+                    MetricStream::new(_metric_callback, stmt, elapsed, stream)
+                }
                 #[allow(unreachable_patterns)]
                 _ => unreachable!(),
             },

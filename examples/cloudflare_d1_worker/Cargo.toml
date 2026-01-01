@@ -1,0 +1,25 @@
+[package]
+name = "sea-orm-cloudflare-d1-worker"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Cloudflare Workers runtime
+worker = { version = "0.7", default-features = false, features = ["d1"] }
+
+# SeaORM with the native D1 driver (no tokio/async-std runtime)
+sea-orm = { path = "../..", default-features = false, features = ["macros", "cloudflare-d1"] }
+
+serde = { version = "1", default-features = false, features = ["derive"] }
+serde_json = { version = "1", default-features = false }
+
+# Better panic messages in `wrangler dev`
+console_error_panic_hook = "0.1"
+
+# Treat this example as a standalone crate when building via `--manifest-path`.
+# This avoids Cargo trying to include it in the parent SeaORM workspace.
+[workspace]

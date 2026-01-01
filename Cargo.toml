@@ -66,7 +66,7 @@ sea-query = { version = "=1.0.0-rc.29", default-features = false, features = [
     "backend-sqlite",
     "sea-orm",
 ] }
-sea-query-sqlx = { version = "0.8.0-rc.9", default-features = false, optional = true }
+sea-query-sqlx = { version = "0.8.0-rc.11", default-features = false, optional = true }
 sea-schema = { version = "0.17.0-rc.15", default-features = false, features = [
     "discovery",
     "writer",
@@ -74,7 +74,8 @@ sea-schema = { version = "0.17.0-rc.15", default-features = false, features = [
 ], optional = true }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false, optional = true }
-sqlx = { version = "0.8.4", default-features = false, optional = true }
+sqlx = { version = "=0.8.3", default-features = false, optional = true }
+sqlx-d1 = { version = "0.3.1", default-features = false, optional = true }
 strum = { version = "0.27", default-features = false }
 thiserror = { version = "2", default-features = false }
 time = { version = "0.3.36", default-features = false, optional = true }
@@ -84,6 +85,7 @@ tracing = { version = "0.1", default-features = false, features = [
 ] }
 url = { version = "2.2", default-features = false }
 uuid = { version = "1", default-features = false, optional = true }
+worker = { version = "0.7", default-features = false, features = ["d1"], optional = true }
 
 [dev-dependencies]
 dotenv = "0.15"
@@ -105,6 +107,11 @@ uuid = { version = "1", features = ["v4"] }
 
 [features]
 debug-print = []
+# Native Cloudflare D1 driver (via `sqlx-d1` + `worker`).
+#
+# NOTE: This feature intentionally enables `dep:sqlx` directly (instead of the internal
+# `sqlx-dep` alias) to keep feature graphs explicit and easier to reason about.
+cloudflare-d1 = ["dep:sqlx", "dep:sqlx-d1", "dep:worker", "sea-query-sqlx/sqlx-d1"]
 default = [
     "macros",
     "with-json",
@@ -153,7 +160,7 @@ seaography = ["sea-orm-macros/seaography"]
 sqlite-no-row-value-before-3_15 = []
 sqlite-use-returning-for-3_35 = []
 sqlx-all = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite"]
-sqlx-dep = ["sqlx"]
+sqlx-dep = ["dep:sqlx"]
 sqlx-mysql = [
     "sqlx-dep",
     "sea-query-sqlx/sqlx-mysql",
@@ -182,6 +189,7 @@ with-chrono = [
     "chrono",
     "sea-query/with-chrono",
     "sea-query-sqlx?/with-chrono",
+    "sqlx-d1?/chrono",
 ]
 with-ipnetwork = [
     "ipnetwork",
@@ -199,16 +207,19 @@ with-json = [
     "time?/serde",
     "pgvector?/serde",
     "sea-query-sqlx?/with-json",
+    "sqlx-d1?/json",
 ]
 with-rust_decimal = [
     "rust_decimal",
     "sea-query/with-rust_decimal",
     "sea-query-sqlx?/with-rust_decimal",
+    "sqlx-d1?/decimal",
 ]
 with-time = ["time", "sea-query/with-time", "sea-query-sqlx?/with-time"]
-with-uuid = ["uuid", "sea-query/with-uuid", "sea-query-sqlx?/with-uuid"]
+with-uuid = ["uuid", "sea-query/with-uuid", "sea-query-sqlx?/with-uuid", "sqlx-d1?/uuid"]
 
 # This allows us to develop using a local version of sea-query
 [patch.crates-io]
-# sea-query = { path = "../sea-query" }
-# sea-query = { git = "https://github.com/SeaQL/sea-query", branch = "master" }
+sea-query = { git = "https://github.com/Summpot/sea-query.git", branch = "master" }
+sea-query-sqlx = { git = "https://github.com/Summpot/sea-query.git", branch = "master" }
+sea-schema = { git = "https://github.com/Summpot/sea-schema.git", branch = "master" }

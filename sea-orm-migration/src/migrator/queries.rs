@@ -19,6 +19,8 @@ where
         DbBackend::Postgres => Ok(sea_schema::postgres::Postgres.query_tables()),
         #[cfg(feature = "sqlx-sqlite")]
         DbBackend::Sqlite => Ok(sea_schema::sqlite::Sqlite.query_tables()),
+        #[cfg(all(feature = "cloudflare-d1", not(feature = "sqlx-sqlite")))]
+        DbBackend::Sqlite => Ok(sea_schema::d1::D1.query_tables()),
         #[allow(unreachable_patterns)]
         other => Err(DbErr::BackendNotSupported {
             db: other.as_str(),
@@ -42,6 +44,8 @@ where
         DbBackend::Postgres => sea_schema::postgres::Postgres::get_current_schema(),
         #[cfg(feature = "sqlx-sqlite")]
         DbBackend::Sqlite => sea_schema::sqlite::Sqlite::get_current_schema(),
+        #[cfg(all(feature = "cloudflare-d1", not(feature = "sqlx-sqlite")))]
+        DbBackend::Sqlite => sea_schema::d1::D1::get_current_schema(),
         #[allow(unreachable_patterns)]
         other => panic!("{other:?} feature is off"),
     }
