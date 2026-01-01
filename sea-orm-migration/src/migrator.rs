@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::time::SystemTime;
 use tracing::info;
 
@@ -225,6 +226,28 @@ pub trait MigratorTrait: Send {
             Box::pin(async move { exec_down::<Self>(manager, steps).await })
         })
         .await
+    }
+}
+
+fn unix_timestamp_seconds() -> i64 {
+    // Cloudflare Workers uses `wasm32-unknown-unknown` where `std::time::SystemTime::now()`
+    // panics at runtime with: "time not implemented on this platform".
+    //
+    // For that target only, use JS Date as the time source.
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        // Milliseconds since epoch.
+        let ms = js_sys::Date::now();
+        // NOTE: This intentionally truncates toward zero.
+        (ms / 1000.0) as i64
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("SystemTime before UNIX EPOCH!");
+        now.as_secs() as i64
     }
 }
 
@@ -468,12 +491,9 @@ async fn exec_up_with(
         info!("Applying migration '{}'", migration.name());
         migration.up(manager).await?;
         info!("Migration '{}' has been applied", migration.name());
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("SystemTime before UNIX EPOCH!");
         seaql_migrations::Entity::insert(seaql_migrations::ActiveModel {
             version: ActiveValue::Set(migration.name().to_owned()),
-            applied_at: ActiveValue::Set(now.as_secs() as i64),
+            applied_at: ActiveValue::Set(unix_timestamp_seconds()),
         })
         .table_name(migration_table_name.clone())
         .exec(db)

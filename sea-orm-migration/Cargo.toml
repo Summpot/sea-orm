@@ -38,6 +38,10 @@ tracing-subscriber = { version = "0.3.17", default-features = false, features = 
     "fmt",
 ] }
 
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# `std::time::SystemTime::now()` panics on wasm32-unknown-unknown; use JS Date instead.
+js-sys = { version = "0.3", default-features = false }
+
 [dev-dependencies]
 async-std = { version = "1", features = ["attributes", "tokio1"] }
 
