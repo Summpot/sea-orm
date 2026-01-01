@@ -6,6 +6,8 @@ use crate::{
 };
 #[cfg(feature = "sqlx-dep")]
 use crate::{sqlx_error_to_exec_err, sqlx_error_to_query_err};
+#[cfg(feature = "sqlx-dep")]
+use sqlx::TransactionManager;
 use futures_util::lock::Mutex;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tracing::instrument;
@@ -58,13 +60,13 @@ impl DatabaseTransaction {
                         access_mode,
                     )
                     .await?;
-                    <sqlx::MySql as sqlx::Database>::TransactionManager::begin(c, None)
+                    <sqlx::MySql as sqlx::Database>::TransactionManager::begin(c)
                         .await
                         .map_err(sqlx_error_to_query_err)
                 }
                 #[cfg(feature = "sqlx-postgres")]
                 InnerConnection::Postgres(c) => {
-                    <sqlx::Postgres as sqlx::Database>::TransactionManager::begin(c, None)
+                    <sqlx::Postgres as sqlx::Database>::TransactionManager::begin(c)
                         .await
                         .map_err(sqlx_error_to_query_err)?;
                     // in PostgreSQL SET TRANSACTION operations must be executed inside transaction
@@ -84,7 +86,7 @@ impl DatabaseTransaction {
                         access_mode,
                     )
                     .await?;
-                    <sqlx::Sqlite as sqlx::Database>::TransactionManager::begin(c, None)
+                    <sqlx::Sqlite as sqlx::Database>::TransactionManager::begin(c)
                         .await
                         .map_err(sqlx_error_to_query_err)
                 }
