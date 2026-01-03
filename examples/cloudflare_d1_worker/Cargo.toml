@@ -1,8 +1,8 @@
 [package]
-name = "sea-orm-cloudflare-d1-worker"
-version = "0.1.0"
 edition = "2024"
+name    = "sea-orm-cloudflare-d1-worker"
 publish = false
+version = "0.1.0"
 
 [lib]
 crate-type = ["cdylib"]
@@ -12,14 +12,35 @@ crate-type = ["cdylib"]
 worker = { version = "0.7", default-features = false, features = ["d1"] }
 
 # SeaORM with the native D1 driver (no tokio/async-std runtime)
-sea-orm = { path = "../..", default-features = false, features = ["macros", "cloudflare-d1"] }
+sea-orm = { git = "https://github.com/Summpot/sea-orm.git", branch = "master", default-features = false, features = [
+    "macros",
+    "cloudflare-d1",
+] }
 
-serde = { version = "1", default-features = false, features = ["derive"] }
+# Use SeaORM migrations in-process.
+#
+# Note: we intentionally do NOT enable `sea-orm-migration`'s `cloudflare-d1` feature here.
+# That feature currently also enables `sea-schema/cloudflare-d1`, which is not available on
+# crates.io `sea-schema` builds. D1 support is provided by enabling `sea-orm`'s `cloudflare-d1`
+# feature above; Cargo feature unification will enable it for all dependents.
+sea-orm-migration = { git = "https://github.com/Summpot/sea-orm.git", branch = "master", default-features = false }
+
+serde      = { version = "1", default-features = false, features = ["derive"] }
 serde_json = { version = "1", default-features = false }
+
+# Deterministic IDs so we can reload inserted rows on D1 without relying on insert metadata.
+uuid = { version = "1", default-features = false, features = ["v4", "js", "serde"] }
+
+# Help rand/getrandom work reliably on wasm.
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
 
 # Better panic messages in `wrangler dev`
 console_error_panic_hook = "0.1"
 
-# Treat this example as a standalone crate when building via `--manifest-path`.
-# This avoids Cargo trying to include it in the parent SeaORM workspace.
 [workspace]
+members = ["."]
+
+[patch.crates-io]
+sea-query = { git = "https://github.com/Summpot/sea-query.git", branch = "master" }
+sea-query-derive = { git = "https://github.com/Summpot/sea-query.git", branch = "master" }
+sea-query-sqlx = { git = "https://github.com/Summpot/sea-query.git", branch = "master" }

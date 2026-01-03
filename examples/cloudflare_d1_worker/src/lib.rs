@@ -1,11 +1,13 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseConnection, EntityTrait,
-    QueryFilter, Schema, Set,
+    ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
+use sea_orm_migration::MigratorTrait;
 use serde::Deserialize;
+use uuid::Uuid;
 use worker::*;
 
 mod entity;
+mod migration;
 
 const DB_BINDING: &str = "DB";
 
@@ -19,7 +21,9 @@ pub async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         })
         .post_async("/init", |_req, ctx| async move {
             let db = connect_db(&ctx).await?;
-            init_schema(&db).await?;
+            migration::Migrator::up(&db, None)
+                .await
+                .map_err(worker_err)?;
             Response::ok("ok")
         })
         .get_async("/users", |_req, ctx| async move {
@@ -40,23 +44,34 @@ pub async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
             let payload: NewUser = req.json().await?;
 
-            let user = entity::user::ActiveModel {
+            // D1 can report 0 rows_affected on INSERT even when the row is created.
+            // Avoid relying on insert metadata by inserting without returning and reloading by ID.
+            let user_id = Uuid::new_v4().to_string();
+            let model = entity::user::ActiveModel {
+                id: Set(user_id.clone()),
                 name: Set(payload.name),
                 ..Default::default()
-            }
-            .insert(&db)
-            .await
-            .map_err(worker_err)?;
+            };
+
+            entity::user::Entity::insert(model)
+                .exec_without_returning(&db)
+                .await
+                .map_err(worker_err)?;
+
+            let user = entity::user::Entity::find_by_id(user_id)
+                .one(&db)
+                .await
+                .map_err(worker_err)?
+                .ok_or_else(|| worker::Error::RustError("Inserted user could not be reloaded".into()))?;
 
             Response::from_json(&user)
         })
         .get_async("/users/:id/posts", |_req, ctx| async move {
             let db = connect_db(&ctx).await?;
-            let user_id: i32 = ctx
+            let user_id: String = ctx
                 .param("id")
                 .ok_or_else(|| worker::Error::RustError("missing :id".into()))?
-                .parse()
-                .map_err(|e| worker::Error::RustError(format!("invalid :id: {e}")))?;
+                .to_string();
 
             let posts = entity::post::Entity::find()
                 .filter(entity::post::Column::UserId.eq(user_id))
@@ -71,20 +86,31 @@ pub async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
             #[derive(Deserialize)]
             struct NewPost {
-                user_id: i32,
+                user_id: String,
                 title: String,
             }
 
             let payload: NewPost = req.json().await?;
 
-            let post = entity::post::ActiveModel {
+            // D1 insert metadata can be unreliable; insert without returning and reload by ID.
+            let post_id = Uuid::new_v4().to_string();
+            let model = entity::post::ActiveModel {
+                id: Set(post_id.clone()),
                 user_id: Set(payload.user_id),
                 title: Set(payload.title),
                 ..Default::default()
-            }
-            .insert(&db)
-            .await
-            .map_err(worker_err)?;
+            };
+
+            entity::post::Entity::insert(model)
+                .exec_without_returning(&db)
+                .await
+                .map_err(worker_err)?;
+
+            let post = entity::post::Entity::find_by_id(post_id)
+                .one(&db)
+                .await
+                .map_err(worker_err)?
+                .ok_or_else(|| worker::Error::RustError("Inserted post could not be reloaded".into()))?;
 
             Response::from_json(&post)
         })
@@ -98,21 +124,6 @@ async fn connect_db(ctx: &RouteContext<()>) -> Result<DatabaseConnection> {
         .await
         .map_err(worker_err)?;
     Ok(db)
-}
-
-async fn init_schema(db: &DatabaseConnection) -> Result<()> {
-    let schema = Schema::new(db.get_database_backend());
-
-    // Create in dependency order: users -> posts.
-    let mut stmt = schema.create_table_from_entity(entity::user::Entity);
-    stmt.if_not_exists();
-    db.execute(&stmt).await.map_err(worker_err)?;
-
-    let mut stmt = schema.create_table_from_entity(entity::post::Entity);
-    stmt.if_not_exists();
-    db.execute(&stmt).await.map_err(worker_err)?;
-
-    Ok(())
 }
 
 fn worker_err<E: core::fmt::Display>(e: E) -> worker::Error {
