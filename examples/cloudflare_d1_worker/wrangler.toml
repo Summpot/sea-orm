@@ -2,10 +2,6 @@ name = "sea-orm-cloudflare-d1-worker"
 main = "build/worker/shim.mjs"
 compatibility_date = "2025-01-01"
 
-[build]
-command = "cargo build --target wasm32-unknown-unknown"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "sea-orm-example"
-database_id = "<YOUR-D1-DATABASE-ID>"
