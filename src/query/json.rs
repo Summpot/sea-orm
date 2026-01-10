@@ -247,6 +247,30 @@ impl FromQueryResult for JsonValue {
                 }
                 Ok(JsonValue::Object(map))
             }
+            #[cfg(feature = "libsql")]
+            crate::QueryResultRow::Libsql(row) => {
+                use serde_json::json;
+
+                for (i, column) in row.columns.iter().enumerate() {
+                    let column = if !column.starts_with(pre) {
+                        continue;
+                    } else {
+                        column.replacen(pre, "", 1)
+                    };
+                    map.insert(
+                        column,
+                        match &row.values[i] {
+                            libsql::Value::Integer(v) => json!(v),
+                            libsql::Value::Real(v) => json!(v),
+                            libsql::Value::Text(v) => json!(v),
+                            libsql::Value::Blob(v) => json!(v),
+                            libsql::Value::Null => json!(null),
+                        },
+                    );
+                }
+
+                Ok(JsonValue::Object(map))
+            }
             #[cfg(feature = "mock")]
             crate::QueryResultRow::Mock(row) => {
                 for (column, value) in row.clone().into_column_value_tuples() {

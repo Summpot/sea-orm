@@ -153,6 +153,8 @@ impl DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(c) => c.begin(sqlite_transaction_mode),
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(c) => c.begin().await,
                     #[cfg(feature = "mock")]
                     InnerConnection::Mock(c) => {
                         c.begin();
@@ -268,6 +270,8 @@ impl DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(c) => c.commit(),
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(c) => c.commit().await,
                     #[cfg(feature = "mock")]
                     InnerConnection::Mock(c) => {
                         c.commit();
@@ -325,6 +329,8 @@ impl DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(c) => c.rollback(),
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(c) => c.rollback().await,
                     #[cfg(feature = "mock")]
                     InnerConnection::Mock(c) => {
                         c.rollback();
@@ -366,6 +372,10 @@ impl DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(c) => {
+                        c.start_rollback()?;
+                    }
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(c) => {
                         c.start_rollback()?;
                     }
                     #[cfg(feature = "mock")]
@@ -458,6 +468,8 @@ impl ConnectionTrait for DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(conn) => conn.execute(stmt, &self.metric_callback),
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(conn) => conn.execute(stmt, &self.metric_callback).await,
                     #[cfg(feature = "mock")]
                     InnerConnection::Mock(conn) => conn.execute(stmt),
                     #[cfg(feature = "proxy")]
@@ -512,6 +524,8 @@ impl ConnectionTrait for DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(conn) => conn.execute_unprepared(sql),
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(conn) => conn.execute_unprepared(sql, &self.metric_callback).await,
                     #[cfg(feature = "mock")]
                     InnerConnection::Mock(conn) => {
                         let db_backend = conn.get_database_backend();
@@ -580,6 +594,8 @@ impl ConnectionTrait for DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(conn) => conn.query_one(stmt, &self.metric_callback),
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(conn) => conn.query_one(stmt, &self.metric_callback).await,
                     #[cfg(feature = "mock")]
                     InnerConnection::Mock(conn) => conn.query_one(stmt),
                     #[cfg(feature = "proxy")]
@@ -646,6 +662,8 @@ impl ConnectionTrait for DatabaseTransaction {
                     }
                     #[cfg(feature = "rusqlite")]
                     InnerConnection::Rusqlite(conn) => conn.query_all(stmt, &self.metric_callback),
+                    #[cfg(feature = "libsql")]
+                    InnerConnection::Libsql(conn) => conn.query_all(stmt, &self.metric_callback).await,
                     #[cfg(feature = "mock")]
                     InnerConnection::Mock(conn) => conn.query_all(stmt),
                     #[cfg(feature = "proxy")]

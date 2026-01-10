@@ -144,6 +144,10 @@ pub enum RuntimeErr {
     #[cfg(feature = "rusqlite")]
     #[error("{0}")]
     Rusqlite(Arc<crate::driver::rusqlite::RusqliteError>),
+    /// Libsql Error
+    #[cfg(feature = "libsql")]
+    #[error("{0}")]
+    Libsql(Arc<crate::driver::libsql::LibsqlError>),
     /// Error generated from within SeaORM
     #[error("{0}")]
     Internal(String),
@@ -342,6 +346,37 @@ impl DbErr {
                     }
                     _ => (),
                 }
+            }
+        }
+
+        #[cfg(feature = "libsql")]
+        if let DbErr::Exec(RuntimeErr::Libsql(err)) | DbErr::Query(RuntimeErr::Libsql(err)) = self
+        {
+            use crate::driver::libsql::LibsqlError;
+            use std::ops::Deref;
+
+            match err.deref() {
+                LibsqlError::SqliteFailure(code, msg) => match *code {
+                    1555 | 2067 => {
+                        return Some(SqlErr::UniqueConstraintViolation(msg.clone()));
+                    }
+                    787 => {
+                        return Some(SqlErr::ForeignKeyConstraintViolation(msg.clone()));
+                    }
+                    _ => (),
+                },
+                LibsqlError::RemoteSqliteFailure(_code, extended_code, msg) => {
+                    match *extended_code {
+                        1555 | 2067 => {
+                            return Some(SqlErr::UniqueConstraintViolation(msg.to_owned()));
+                        }
+                        787 => {
+                            return Some(SqlErr::ForeignKeyConstraintViolation(msg.to_owned()));
+                        }
+                        _ => (),
+                    }
+                }
+                _ => (),
             }
         }
         None

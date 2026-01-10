@@ -24,6 +24,9 @@ pub(crate) enum ExecResultHolder {
     /// Holds the result of executing an operation on a SQLite database
     #[cfg(feature = "rusqlite")]
     Rusqlite(crate::driver::rusqlite::RusqliteExecResult),
+    /// Holds the result of executing an operation on a SQLite database via libsql
+    #[cfg(feature = "libsql")]
+    Libsql(crate::driver::libsql::LibsqlExecResult),
     /// Holds the result of executing an operation on the Mock database
     #[cfg(feature = "mock")]
     Mock(crate::MockExecResult),
@@ -68,6 +71,15 @@ impl ExecResult {
                     last_insert_rowid as u64
                 }
             }
+            #[cfg(feature = "libsql")]
+            ExecResultHolder::Libsql(result) => {
+                let last_insert_rowid = result.last_insert_rowid;
+                if last_insert_rowid < 0 {
+                    unreachable!("negative last_insert_rowid")
+                } else {
+                    last_insert_rowid as u64
+                }
+            }
             #[cfg(feature = "mock")]
             ExecResultHolder::Mock(result) => result.last_insert_id,
             #[cfg(feature = "proxy")]
@@ -88,6 +100,8 @@ impl ExecResult {
             ExecResultHolder::SqlxSqlite(result) => result.rows_affected(),
             #[cfg(feature = "rusqlite")]
             ExecResultHolder::Rusqlite(result) => result.rows_affected,
+            #[cfg(feature = "libsql")]
+            ExecResultHolder::Libsql(result) => result.rows_affected,
             #[cfg(feature = "mock")]
             ExecResultHolder::Mock(result) => result.rows_affected,
             #[cfg(feature = "proxy")]

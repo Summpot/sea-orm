@@ -54,6 +54,7 @@ ipnetwork = { version = "0.21", default-features = false, optional = true, featu
     "serde",
 ] }
 itertools = "0.14.0"
+libsql = { version = "0.9.29", default-features = false, features = ["core"], optional = true }
 log = { version = "0.4", default-features = false }
 mac_address = { version = "1.1", default-features = false, optional = true }
 ouroboros = { version = "0.18", default-features = false, optional = true }
@@ -153,6 +154,7 @@ runtime-tokio = ["sqlx?/runtime-tokio"]
 runtime-tokio-native-tls = ["sqlx?/tls-native-tls", "runtime-tokio"]
 runtime-tokio-rustls = ["sqlx?/tls-rustls", "runtime-tokio"]
 rusqlite = []
+libsql = ["dep:libsql"]
 schema-sync = ["sea-schema"]
 sea-orm-internal = []
 seaography = ["sea-orm-macros/seaography"]

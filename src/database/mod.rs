@@ -187,6 +187,11 @@ impl Database {
             )));
         }
 
+        #[cfg(feature = "libsql")]
+        if opt.url.starts_with("libsql:") {
+            return crate::LibsqlConnector::connect(opt).await;
+        }
+
         #[cfg(feature = "sqlx-mysql")]
         if DbBackend::MySql.is_prefix_of(&opt.url) {
             return crate::SqlxMySqlConnector::connect(opt).await;

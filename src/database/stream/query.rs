@@ -89,6 +89,29 @@ impl QueryStream {
                     let elapsed = start.map(|s| s.elapsed().unwrap_or_default());
                     MetricStream::new(_metric_callback, stmt, elapsed, stream)
                 }
+                #[cfg(all(feature = "libsql", not(feature = "sync")))]
+                InnerConnection::Libsql(conn) => {
+                    use crate::error::RuntimeErr;
+                    use std::sync::Arc;
+
+                    let start = _metric_callback.is_some().then(std::time::SystemTime::now);
+                    let stream = async_stream::try_stream! {
+                        let (mut rows, cols) = conn.query_rows(stmt).await?;
+                        while let Some(row) = rows
+                            .next()
+                            .await
+                            .map_err(|e| DbErr::Query(RuntimeErr::Libsql(Arc::new(e))))?
+                        {
+                            let owned = crate::driver::libsql::OwnedRow::from_row(cols.clone(), &row)
+                                .map_err(|e| DbErr::Query(RuntimeErr::Libsql(Arc::new(e))))?;
+                            yield QueryResult {
+                                row: crate::executor::QueryResultRow::Libsql(owned),
+                            };
+                        }
+                    };
+                    let elapsed = start.map(|s| s.elapsed().unwrap_or_default());
+                    MetricStream::new(_metric_callback, stmt, elapsed, stream)
+                }
                 #[cfg(feature = "mock")]
                 InnerConnection::Mock(c) => {
                     let start = _metric_callback.is_some().then(std::time::SystemTime::now);

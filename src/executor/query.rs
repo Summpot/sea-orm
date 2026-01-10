@@ -42,6 +42,8 @@ pub(crate) enum QueryResultRow {
     SqlxSqlite(sqlx::sqlite::SqliteRow),
     #[cfg(feature = "rusqlite")]
     Rusqlite(crate::driver::rusqlite::RusqliteRow),
+    #[cfg(feature = "libsql")]
+    Libsql(crate::driver::libsql::OwnedRow),
     #[cfg(feature = "mock")]
     Mock(crate::MockRow),
     #[cfg(feature = "proxy")]
@@ -211,6 +213,8 @@ impl QueryResult {
             }
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(row) => row.columns().iter().map(|c| c.to_string()).collect(),
+            #[cfg(feature = "libsql")]
+            QueryResultRow::Libsql(row) => row.columns.iter().map(|c| c.to_string()).collect(),
             #[cfg(feature = "mock")]
             QueryResultRow::Mock(row) => row
                 .clone()
@@ -291,6 +295,8 @@ impl Debug for QueryResultRow {
             Self::SqlxSqlite(_) => write!(f, "QueryResultRow::SqlxSqlite cannot be inspected"),
             #[cfg(feature = "rusqlite")]
             Self::Rusqlite(row) => write!(f, "{row:?}"),
+            #[cfg(feature = "libsql")]
+            Self::Libsql(row) => write!(f, "{row:?}"),
             #[cfg(feature = "mock")]
             Self::Mock(row) => write!(f, "{row:?}"),
             #[cfg(feature = "proxy")]
@@ -444,6 +450,10 @@ macro_rules! try_getable_all {
                     QueryResultRow::Rusqlite(row) => row
                         .try_get::<Option<$type>, _>(idx)
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+                    #[cfg(feature = "libsql")]
+                    QueryResultRow::Libsql(row) => row
+                        .try_get::<Option<$type>, _>(idx)
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "mock")]
                     QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
                         debug_print!("{:#?}", e.to_string());
@@ -486,6 +496,10 @@ macro_rules! try_getable_unsigned {
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "rusqlite")]
                     QueryResultRow::Rusqlite(row) => row
+                        .try_get::<Option<$type>, _>(idx)
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+                    #[cfg(feature = "libsql")]
+                    QueryResultRow::Libsql(row) => row
                         .try_get::<Option<$type>, _>(idx)
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "mock")]
@@ -532,6 +546,12 @@ macro_rules! try_getable_mysql {
                     #[cfg(feature = "rusqlite")]
                     QueryResultRow::Rusqlite(row) => Err(type_err(format!(
                         "{} unsupported by rusqlite",
+                        stringify!($type)
+                    ))
+                    .into()),
+                    #[cfg(feature = "libsql")]
+                    QueryResultRow::Libsql(_) => Err(type_err(format!(
+                        "{} unsupported by libsql",
                         stringify!($type)
                     ))
                     .into()),
@@ -583,6 +603,12 @@ macro_rules! try_getable_postgres {
                         stringify!($type)
                     ))
                     .into()),
+                    #[cfg(feature = "libsql")]
+                    QueryResultRow::Libsql(_) => Err(type_err(format!(
+                        "{} unsupported by libsql",
+                        stringify!($type)
+                    ))
+                    .into()),
                     #[cfg(feature = "mock")]
                     QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
                         debug_print!("{:#?}", e.to_string());
@@ -628,6 +654,11 @@ macro_rules! try_getable_date_time {
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "rusqlite")]
                     QueryResultRow::Rusqlite(row) => row
+                        .try_get::<Option<$type>, _>(idx)
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx)))
+                        .map(|v| v.into()),
+                    #[cfg(feature = "libsql")]
+                    QueryResultRow::Libsql(row) => row
                         .try_get::<Option<$type>, _>(idx)
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx)))
                         .map(|v| v.into()),
@@ -744,6 +775,21 @@ impl TryGetable for Decimal {
                     None => Err(err_null_idx_col(idx)),
                 }
             }
+            #[cfg(feature = "libsql")]
+            QueryResultRow::Libsql(row) => {
+                let val: Option<f64> = row.try_get(idx)?;
+                match val {
+                    Some(v) => Decimal::try_from(v).map_err(|e| {
+                        DbErr::TryIntoErr {
+                            from: "f64",
+                            into: "Decimal",
+                            source: Arc::new(e),
+                        }
+                        .into()
+                    }),
+                    None => Err(err_null_idx_col(idx)),
+                }
+            }
             #[cfg(feature = "mock")]
             #[allow(unused_variables)]
             QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
@@ -799,6 +845,21 @@ impl TryGetable for BigDecimal {
             }
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(row) => {
+                let val: Option<f64> = row.try_get(idx)?;
+                match val {
+                    Some(v) => BigDecimal::try_from(v).map_err(|e| {
+                        DbErr::TryIntoErr {
+                            from: "f64",
+                            into: "BigDecimal",
+                            source: Arc::new(e),
+                        }
+                        .into()
+                    }),
+                    None => Err(err_null_idx_col(idx)),
+                }
+            }
+            #[cfg(feature = "libsql")]
+            QueryResultRow::Libsql(row) => {
                 let val: Option<f64> = row.try_get(idx)?;
                 match val {
                     Some(v) => BigDecimal::try_from(v).map_err(|e| {
@@ -881,6 +942,10 @@ macro_rules! try_getable_uuid {
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "rusqlite")]
                     QueryResultRow::Rusqlite(row) => row
+                        .try_get::<Option<uuid::Uuid>, _>(idx)
+                        .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+                    #[cfg(feature = "libsql")]
+                    QueryResultRow::Libsql(row) => row
                         .try_get::<Option<uuid::Uuid>, _>(idx)
                         .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
                     #[cfg(feature = "mock")]
@@ -967,6 +1032,10 @@ impl TryGetable for u32 {
             QueryResultRow::Rusqlite(row) => row
                 .try_get::<Option<u32>, _>(idx)
                 .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "libsql")]
+            QueryResultRow::Libsql(row) => row
+                .try_get::<Option<u32>, _>(idx)
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
             #[cfg(feature = "mock")]
             #[allow(unused_variables)]
             QueryResultRow::Mock(row) => row.try_get(idx).map_err(|e| {
@@ -1016,6 +1085,10 @@ impl TryGetable for String {
                 .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(row) => row
+                .try_get::<Option<String>, _>(idx)
+                .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
+            #[cfg(feature = "libsql")]
+            QueryResultRow::Libsql(row) => row
                 .try_get::<Option<String>, _>(idx)
                 .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx))),
             #[cfg(feature = "mock")]
@@ -1070,6 +1143,12 @@ mod postgres_array {
                         #[cfg(feature = "rusqlite")]
                         QueryResultRow::Rusqlite(_) => Err(type_err(format!(
                             "{} unsupported by rusqlite",
+                            stringify!($type)
+                        ))
+                        .into()),
+                        #[cfg(feature = "libsql")]
+                        QueryResultRow::Libsql(_) => Err(type_err(format!(
+                            "{} unsupported by libsql",
                             stringify!($type)
                         ))
                         .into()),
@@ -1175,6 +1254,12 @@ mod postgres_array {
                         #[cfg(feature = "rusqlite")]
                         QueryResultRow::Rusqlite(_) => Err(type_err(format!(
                             "{} unsupported by rusqlite",
+                            stringify!($type)
+                        ))
+                        .into()),
+                        #[cfg(feature = "libsql")]
+                        QueryResultRow::Libsql(_) => Err(type_err(format!(
+                            "{} unsupported by libsql",
                             stringify!($type)
                         ))
                         .into()),
@@ -1509,6 +1594,13 @@ where
                 .and_then(|opt| opt.ok_or_else(|| err_null_idx_col(idx)).map(|json| json.0)),
             #[cfg(feature = "rusqlite")]
             QueryResultRow::Rusqlite(row) => row
+                .try_get::<Option<serde_json::Value>, _>(idx)?
+                .ok_or_else(|| err_null_idx_col(idx))
+                .and_then(|json| {
+                    serde_json::from_value(json).map_err(|e| crate::error::json_err(e).into())
+                }),
+            #[cfg(feature = "libsql")]
+            QueryResultRow::Libsql(row) => row
                 .try_get::<Option<serde_json::Value>, _>(idx)?
                 .ok_or_else(|| err_null_idx_col(idx))
                 .and_then(|json| {

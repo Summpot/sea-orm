@@ -2,9 +2,11 @@
 mod mock;
 #[cfg(feature = "proxy")]
 mod proxy;
+#[cfg(feature = "libsql")]
+pub(crate) mod libsql;
 #[cfg(feature = "rusqlite")]
 pub(crate) mod rusqlite;
-#[cfg(any(feature = "sqlx-sqlite", feature = "rusqlite"))]
+#[cfg(any(feature = "sqlx-sqlite", feature = "rusqlite", feature = "libsql"))]
 mod sqlite;
 #[cfg(feature = "sqlx-dep")]
 mod sqlx_common;
@@ -19,6 +21,8 @@ pub(crate) mod sqlx_sqlite;
 pub use mock::*;
 #[cfg(feature = "proxy")]
 pub use proxy::*;
+#[cfg(feature = "libsql")]
+pub use libsql::*;
 #[cfg(feature = "sqlx-dep")]
 pub(crate) use sqlx_common::*;
 #[cfg(feature = "sqlx-mysql")]

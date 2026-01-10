@@ -16,6 +16,8 @@ use crate::driver::rusqlite::{RusqliteInnerConnection, RusqliteSharedConnection}
 
 #[cfg(feature = "stream")]
 use crate::StreamTrait;
+#[cfg(feature = "libsql")]
+use crate::driver::libsql::{LibsqlInnerConnection, LibsqlSharedConnection};
 
 #[cfg(any(feature = "mock", feature = "proxy"))]
 use std::sync::Arc;
@@ -60,6 +62,10 @@ pub enum DatabaseConnectionType {
     /// SQLite connection shared across threads (`rusqlite`).
     #[cfg(feature = "rusqlite")]
     RusqliteSharedConnection(RusqliteSharedConnection),
+
+/// libsql database connection sharable across threads
+    #[cfg(feature = "libsql")]
+    LibsqlSharedConnection(LibsqlSharedConnection),
 
     /// In-memory mock connection used for testing (`mock`).
     #[cfg(feature = "mock")]
@@ -121,6 +127,8 @@ pub(crate) enum InnerConnection {
     Sqlite(PoolConnection<sqlx::Sqlite>),
     #[cfg(feature = "rusqlite")]
     Rusqlite(RusqliteInnerConnection),
+    #[cfg(feature = "libsql")]
+    Libsql(LibsqlInnerConnection),
     #[cfg(feature = "mock")]
     Mock(Arc<crate::MockDatabaseConnection>),
     #[cfg(feature = "proxy")]
@@ -141,6 +149,8 @@ impl Debug for DatabaseConnectionType {
                 Self::SqlxSqlitePoolConnection(_) => "SqlxSqlitePoolConnection",
                 #[cfg(feature = "rusqlite")]
                 Self::RusqliteSharedConnection(_) => "RusqliteSharedConnection",
+                #[cfg(feature = "libsql")]
+                Self::LibsqlSharedConnection(_) => "LibsqlSharedConnection",
                 #[cfg(feature = "mock")]
                 Self::MockDatabaseConnection(_) => "MockDatabaseConnection",
                 #[cfg(feature = "proxy")]
@@ -160,7 +170,7 @@ impl ConnectionTrait for DatabaseConnection {
     #[instrument(level = "trace", skip(stmt))]
     #[allow(unused_variables)]
     async fn execute_raw(&self, stmt: Statement) -> Result<ExecResult, DbErr> {
-        super::tracing_spans::with_db_span!(
+super::tracing_spans::with_db_span!(
             "sea_orm.execute",
             self.get_database_backend(),
             stmt.sql.as_str(),
@@ -181,6 +191,8 @@ impl ConnectionTrait for DatabaseConnection {
                     }
                     #[cfg(feature = "rusqlite")]
                     DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.execute(stmt),
+                    #[cfg(feature = "libsql")]
+                    DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.execute(stmt).await,
                     #[cfg(feature = "mock")]
                     DatabaseConnectionType::MockDatabaseConnection(conn) => conn.execute(stmt),
                     #[cfg(feature = "proxy")]
@@ -219,6 +231,10 @@ impl ConnectionTrait for DatabaseConnection {
                     DatabaseConnectionType::RusqliteSharedConnection(conn) => {
                         conn.execute_unprepared(sql)
                     }
+                    #[cfg(feature = "libsql")]
+                    DatabaseConnectionType::LibsqlSharedConnection(conn) => {
+                        conn.execute_unprepared(sql).await
+                    }
                     #[cfg(feature = "mock")]
                     DatabaseConnectionType::MockDatabaseConnection(conn) => {
                         let db_backend = conn.get_database_backend();
@@ -234,13 +250,13 @@ impl ConnectionTrait for DatabaseConnection {
                     DatabaseConnectionType::Disconnected => Err(conn_err("Disconnected")),
                 }
             }
-        )
+)
     }
 
     #[instrument(level = "trace", skip(stmt))]
     #[allow(unused_variables)]
     async fn query_one_raw(&self, stmt: Statement) -> Result<Option<QueryResult>, DbErr> {
-        super::tracing_spans::with_db_span!(
+super::tracing_spans::with_db_span!(
             "sea_orm.query_one",
             self.get_database_backend(),
             stmt.sql.as_str(),
@@ -261,6 +277,8 @@ impl ConnectionTrait for DatabaseConnection {
                     }
                     #[cfg(feature = "rusqlite")]
                     DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.query_one(stmt),
+                    #[cfg(feature = "libsql")]
+                    DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.query_one(stmt).await,
                     #[cfg(feature = "mock")]
                     DatabaseConnectionType::MockDatabaseConnection(conn) => conn.query_one(stmt),
                     #[cfg(feature = "proxy")]
@@ -276,7 +294,7 @@ impl ConnectionTrait for DatabaseConnection {
     #[instrument(level = "trace", skip(stmt))]
     #[allow(unused_variables)]
     async fn query_all_raw(&self, stmt: Statement) -> Result<Vec<QueryResult>, DbErr> {
-        super::tracing_spans::with_db_span!(
+super::tracing_spans::with_db_span!(
             "sea_orm.query_all",
             self.get_database_backend(),
             stmt.sql.as_str(),
@@ -297,6 +315,8 @@ impl ConnectionTrait for DatabaseConnection {
                     }
                     #[cfg(feature = "rusqlite")]
                     DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.query_all(stmt),
+                    #[cfg(feature = "libsql")]
+                    DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.query_all(stmt).await,
                     #[cfg(feature = "mock")]
                     DatabaseConnectionType::MockDatabaseConnection(conn) => conn.query_all(stmt),
                     #[cfg(feature = "proxy")]
@@ -346,6 +366,8 @@ impl StreamTrait for DatabaseConnection {
                 DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.stream(stmt).await,
                 #[cfg(feature = "rusqlite")]
                 DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.stream(stmt),
+                #[cfg(feature = "libsql")]
+                DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.stream(stmt),
                 #[cfg(feature = "mock")]
                 DatabaseConnectionType::MockDatabaseConnection(conn) => {
                     Ok(crate::QueryStream::from((Arc::clone(conn), stmt, None)))
@@ -378,7 +400,9 @@ impl TransactionTrait for DatabaseConnection {
                 conn.begin(None, None, None).await
             }
             #[cfg(feature = "rusqlite")]
-            DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.begin(None, None, None),
+DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.begin(None, None, None),
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.begin(None, None).await,
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(conn) => {
                 DatabaseTransaction::new_mock(Arc::clone(conn), None).await
@@ -453,6 +477,10 @@ impl TransactionTrait for DatabaseConnection {
             DatabaseConnectionType::RusqliteSharedConnection(conn) => {
                 conn.begin(_isolation_level, _access_mode, _sqlite_transaction_mode)
             }
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => {
+                conn.begin(_isolation_level, _access_mode).await
+            }
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(conn) => {
                 DatabaseTransaction::new_mock(Arc::clone(conn), None).await
@@ -493,6 +521,10 @@ impl TransactionTrait for DatabaseConnection {
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => {
                 conn.transaction(_callback, None, None)
+            }
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => {
+                conn.transaction(_callback, None, None).await
             }
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(conn) => {
@@ -548,6 +580,10 @@ impl TransactionTrait for DatabaseConnection {
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => {
                 conn.transaction(_callback, _isolation_level, _access_mode)
+            }
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => {
+                conn.transaction(_callback, _isolation_level, _access_mode).await
             }
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(conn) => {
@@ -720,6 +756,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxSqlitePoolConnection(_) => DbBackend::Sqlite,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(_) => DbBackend::Sqlite,
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(_) => DbBackend::Sqlite,
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(conn) => conn.get_database_backend(),
             #[cfg(feature = "proxy")]
@@ -763,6 +801,10 @@ impl DatabaseConnection {
             DatabaseConnectionType::RusqliteSharedConnection(conn) => {
                 conn.set_metric_callback(_callback)
             }
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => {
+                conn.set_metric_callback(_callback)
+            }
             _ => {}
         }
     }
@@ -778,6 +820,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.ping().await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.ping(),
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.ping().await,
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(conn) => conn.ping(),
             #[cfg(feature = "proxy")]
@@ -803,6 +847,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.close_by_ref().await,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.close_by_ref(),
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.close_by_ref().await,
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(_) => {
                 // Nothing to cleanup, we just consume the `DatabaseConnection`
