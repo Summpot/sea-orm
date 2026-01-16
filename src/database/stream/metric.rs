@@ -4,7 +4,9 @@ use futures_util::Stream;
 
 use crate::{DbErr, QueryResult, Statement};
 
-#[cfg(not(feature = "sync"))]
+#[cfg(all(not(feature = "sync"), target_arch = "wasm32"))]
+type PinBoxStream<'a> = Pin<Box<dyn Stream<Item = Result<QueryResult, DbErr>> + 'a>>;
+#[cfg(all(not(feature = "sync"), not(target_arch = "wasm32")))]
 type PinBoxStream<'a> = Pin<Box<dyn Stream<Item = Result<QueryResult, DbErr>> + 'a + Send>>;
 #[cfg(feature = "sync")]
 type PinBoxStream<'a> = Box<dyn Iterator<Item = Result<QueryResult, DbErr>> + 'a>;
@@ -25,7 +27,7 @@ impl<'a> MetricStream<'a> {
         stream: S,
     ) -> Self
     where
-        S: Stream<Item = Result<QueryResult, DbErr>> + 'a + Send,
+        S: Stream<Item = Result<QueryResult, DbErr>> + 'a,
     {
         MetricStream {
             metric_callback,

@@ -14,6 +14,9 @@ use url::Url;
 
 pub use libsql::{Error as LibsqlError, Value as LibsqlValue};
 
+type LibsqlWasmConnection = LibsqlConnection<CloudflareSender>;
+type LibsqlWasmTransaction = LibsqlTransaction<CloudflareSender>;
+
 /// A helper class to connect to libsql
 #[derive(Debug)]
 pub struct LibsqlConnector;
@@ -21,13 +24,13 @@ pub struct LibsqlConnector;
 /// Defines a libsql connection sharable across threads.
 #[derive(Clone)]
 pub struct LibsqlSharedConnection {
-    conn: LibsqlConnection,
+    conn: LibsqlWasmConnection,
     metric_callback: Option<crate::metric::Callback>,
 }
 
 pub(crate) struct LibsqlInnerConnection {
-    conn: LibsqlConnection,
-    tx: Option<LibsqlTransaction>,
+    conn: LibsqlWasmConnection,
+    tx: Option<LibsqlWasmTransaction>,
     transaction_depth: u32,
 }
 
@@ -350,8 +353,8 @@ impl std::fmt::Debug for LibsqlInnerConnection {
     }
 }
 
-impl From<LibsqlConnection> for LibsqlSharedConnection {
-    fn from(conn: LibsqlConnection) -> Self {
+impl From<LibsqlWasmConnection> for LibsqlSharedConnection {
+    fn from(conn: LibsqlWasmConnection) -> Self {
         LibsqlSharedConnection {
             conn,
             metric_callback: None,
@@ -391,7 +394,7 @@ impl LibsqlConnector {
         }
 
         let url = strip_auth_from_url(url).to_string();
-        let conn = LibsqlConnection::open_cloudflare_worker(url, auth_token);
+        let conn = LibsqlWasmConnection::open_cloudflare_worker(url, auth_token);
         let conn: DatabaseConnection = LibsqlSharedConnection::from(conn).into();
 
         if let Some(cb) = after_conn {
@@ -702,8 +705,8 @@ impl LibsqlInnerConnection {
 }
 
 enum LibsqlActive<'a> {
-    Conn(&'a LibsqlConnection),
-    Tx(&'a LibsqlTransaction),
+    Conn(&'a LibsqlWasmConnection),
+    Tx(&'a LibsqlWasmTransaction),
 }
 
 impl OwnedRow {
