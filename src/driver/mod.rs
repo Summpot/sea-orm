@@ -3,6 +3,8 @@ mod mock;
 #[cfg(feature = "proxy")]
 mod proxy;
 #[cfg(feature = "libsql")]
+#[cfg_attr(target_arch = "wasm32", path = "libsql_wasm.rs")]
+#[cfg_attr(not(target_arch = "wasm32"), path = "libsql.rs")]
 pub(crate) mod libsql;
 #[cfg(feature = "rusqlite")]
 pub(crate) mod rusqlite;

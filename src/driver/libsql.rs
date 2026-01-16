@@ -6,6 +6,7 @@ use std::{
 };
 
 use tracing::{debug, instrument};
+use url::Url;
 
 use crate::{
 	AccessMode, ColIdx, ConnectOptions, DatabaseConnection, DatabaseConnectionType,
@@ -394,48 +395,60 @@ impl LibsqlConnector {
 			)));
 		}
 
-		// Local-only for now: `libsql:///path/to/db` or `libsql::memory:`.
-		if url.host_str().is_some() && !url.host_str().unwrap_or_default().is_empty() {
-			return Err(DbErr::BackendNotSupported {
-				db: "libsql",
-				ctx: "remote libsql URLs are not supported without additional feature flags",
-			});
-		}
-
-		let raw_path = url.path();
-		let mut path = raw_path;
-		#[cfg(windows)]
-		{
-			if raw_path.starts_with('/') && raw_path.as_bytes().get(2) == Some(&b':') {
-				path = &raw_path[1..];
+		let auth_token = resolve_libsql_auth_token(&options, &url);
+		let host = url.host_str().unwrap_or_default();
+		let mut conn = if host.is_empty() {
+			let raw_path = url.path();
+			let mut path = raw_path;
+			#[cfg(windows)]
+			{
+				if raw_path.starts_with('/') && raw_path.as_bytes().get(2) == Some(&b':') {
+					path = &raw_path[1..];
+				}
 			}
-		}
 
-		let path = if path.is_empty() || path == "/" {
-			let tail = options
-				.url
-				.trim_start_matches("libsql://")
-				.trim_start_matches("libsql:")
-				.trim_start_matches('/');
-			if tail.is_empty() {
-				":memory:"
+			let path = if path.is_empty() || path == "/" {
+				let tail = options
+					.url
+					.trim_start_matches("libsql://")
+					.trim_start_matches("libsql:")
+					.trim_start_matches('/');
+				if tail.is_empty() {
+					":memory:"
+				} else {
+					tail
+				}
 			} else {
-				tail
+				path
+			};
+
+			let db = libsql::Builder::new_local(std::path::Path::new(path))
+				.build()
+				.await
+				.map_err(conn_err)?;
+			let conn = db.connect().map_err(conn_err)?;
+
+			LibsqlSharedConnection {
+				conn: Arc::new(Mutex::new(State::Idle(conn))),
+				acquire_timeout,
+				metric_callback: None,
 			}
 		} else {
-			path
-		};
+			let token = auth_token.ok_or_else(|| {
+				conn_err("libsql auth token is required for remote connections")
+			})?;
+			let remote_url = strip_auth_from_url(url).to_string();
+			let db = libsql::Builder::new_remote(remote_url, token)
+				.build()
+				.await
+				.map_err(conn_err)?;
+			let conn = db.connect().map_err(conn_err)?;
 
-		let db = libsql::Builder::new_local(std::path::Path::new(path))
-			.build()
-			.await
-			.map_err(conn_err)?;
-		let conn = db.connect().map_err(conn_err)?;
-
-		let mut conn = LibsqlSharedConnection {
-			conn: Arc::new(Mutex::new(State::Idle(conn))),
-			acquire_timeout,
-			metric_callback: None,
+			LibsqlSharedConnection {
+				conn: Arc::new(Mutex::new(State::Idle(conn))),
+				acquire_timeout,
+				metric_callback: None,
+			}
 		};
 
 		#[cfg(feature = "sqlite-use-returning-for-3_35")]
@@ -1003,6 +1016,29 @@ impl From<LibsqlExecResult> for ExecResult {
 			result: ExecResultHolder::Libsql(result),
 		}
 	}
+}
+
+fn resolve_libsql_auth_token(options: &ConnectOptions, url: &Url) -> Option<String> {
+	options
+		.libsql_auth_token
+		.as_ref()
+		.map(|t| t.to_string())
+		.or_else(|| {
+			url.query_pairs().find_map(|(k, v)| {
+				if k == "authToken" || k == "auth_token" {
+					Some(v.to_string())
+				} else {
+					None
+				}
+			})
+		})
+}
+
+fn strip_auth_from_url(mut url: Url) -> Url {
+	if url.query_pairs().any(|(k, _)| k == "authToken" || k == "auth_token") {
+		url.set_query(None);
+	}
+	url
 }
 
 fn conn_err(err: impl ToString) -> DbErr {

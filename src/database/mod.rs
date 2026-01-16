@@ -120,6 +120,9 @@ pub struct ConnectOptions {
     pub(crate) sqlx_slow_statements_logging_threshold: Duration,
     /// set sqlcipher key
     pub(crate) sqlcipher_key: Option<Cow<'static, str>>,
+    #[cfg(feature = "libsql")]
+    #[debug(skip)]
+    pub(crate) libsql_auth_token: Option<Cow<'static, str>>,
     /// Schema search path (PostgreSQL only)
     pub(crate) schema_search_path: Option<String>,
     /// Application name (PostgreSQL only)
@@ -278,6 +281,8 @@ impl ConnectOptions {
             sqlx_slow_statements_logging_level: log::LevelFilter::Off,
             sqlx_slow_statements_logging_threshold: Duration::from_secs(1),
             sqlcipher_key: None,
+            #[cfg(feature = "libsql")]
+            libsql_auth_token: None,
             schema_search_path: None,
             application_name: None,
             statement_timeout: None,
@@ -444,6 +449,24 @@ impl ConnectOptions {
     {
         self.sqlcipher_key = Some(value.into());
         self
+    }
+
+    #[cfg(feature = "libsql")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "libsql")))]
+    /// Set auth token for libsql remote connections.
+    pub fn libsql_auth_token<T>(&mut self, value: T) -> &mut Self
+    where
+        T: Into<Cow<'static, str>>,
+    {
+        self.libsql_auth_token = Some(value.into());
+        self
+    }
+
+    #[cfg(feature = "libsql")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "libsql")))]
+    /// Get the configured libsql auth token, if any.
+    pub fn get_libsql_auth_token(&self) -> Option<&str> {
+        self.libsql_auth_token.as_deref()
     }
 
     /// Set schema search path (PostgreSQL only)

@@ -54,7 +54,6 @@ ipnetwork = { version = "0.21", default-features = false, optional = true, featu
     "serde",
 ] }
 itertools = "0.14.0"
-libsql = { version = "0.9.29", default-features = false, features = ["core"], optional = true }
 log = { version = "0.4", default-features = false }
 mac_address = { version = "1.1", default-features = false, optional = true }
 ouroboros = { version = "0.18", default-features = false, optional = true }
@@ -97,6 +96,11 @@ uuid = { version = "1", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-time = { version = "1.1.0", default-features = false }
+## libsql: target-specific features so wasm avoids native dependencies.
+libsql = { version = "0.9.29", default-features = false, optional = true, features = ["cloudflare"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libsql = { version = "0.9.29", default-features = false, optional = true, features = ["core", "remote", "tls"] }
 
 [dev-dependencies]
 dotenv = "0.15"
