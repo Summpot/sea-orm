@@ -45,7 +45,8 @@ pub(crate) struct RbacEngineMount {
     inner: Arc<RwLock<Option<RbacEngine>>>,
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl ConnectionTrait for RestrictedConnection {
     fn get_database_backend(&self) -> DbBackend {
         self.conn.get_database_backend()
@@ -91,7 +92,8 @@ impl ConnectionTrait for RestrictedConnection {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl ConnectionTrait for RestrictedTransaction {
     fn get_database_backend(&self) -> DbBackend {
         self.conn.get_database_backend()
@@ -284,7 +286,8 @@ impl RestrictedTransaction {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl TransactionTrait for RestrictedConnection {
     type Transaction = RestrictedTransaction;
 
@@ -366,7 +369,8 @@ impl TransactionTrait for RestrictedConnection {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl TransactionTrait for RestrictedTransaction {
     type Transaction = RestrictedTransaction;
 
@@ -448,7 +452,8 @@ impl TransactionTrait for RestrictedTransaction {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl TransactionSession for RestrictedTransaction {
     async fn commit(self) -> Result<(), DbErr> {
         self.commit().await

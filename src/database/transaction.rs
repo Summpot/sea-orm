@@ -398,7 +398,8 @@ impl DatabaseTransaction {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl TransactionSession for DatabaseTransaction {
     async fn commit(self) -> Result<(), DbErr> {
         self.commit().await
@@ -415,7 +416,8 @@ impl Drop for DatabaseTransaction {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl ConnectionTrait for DatabaseTransaction {
     fn get_database_backend(&self) -> DbBackend {
         // this way we don't need to lock just to know the backend
@@ -688,7 +690,7 @@ impl StreamTrait for DatabaseTransaction {
     fn stream_raw<'a>(
         &'a self,
         stmt: Statement,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Stream<'a>, DbErr>> + 'a + Send>> {
+    ) -> crate::StreamFuture<'a, Result<Self::Stream<'a>, DbErr>> {
         Box::pin(async move {
             #[cfg(not(feature = "sync"))]
             let conn = self.conn.lock().await;
@@ -703,7 +705,8 @@ impl StreamTrait for DatabaseTransaction {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl TransactionTrait for DatabaseTransaction {
     type Transaction = DatabaseTransaction;
 

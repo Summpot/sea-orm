@@ -38,7 +38,8 @@ impl<'c> From<&'c DatabaseTransaction> for DatabaseExecutor<'c> {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl ConnectionTrait for DatabaseExecutor<'_> {
     fn get_database_backend(&self) -> DbBackend {
         match self {
@@ -81,7 +82,8 @@ impl ConnectionTrait for DatabaseExecutor<'_> {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl TransactionTrait for DatabaseExecutor<'_> {
     type Transaction = DatabaseTransaction;
 

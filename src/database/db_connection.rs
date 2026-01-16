@@ -161,7 +161,8 @@ impl Debug for DatabaseConnectionType {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl ConnectionTrait for DatabaseConnection {
     fn get_database_backend(&self) -> DbBackend {
         self.get_database_backend()
@@ -341,8 +342,8 @@ super::tracing_spans::with_db_span!(
     }
 }
 
-#[async_trait::async_trait]
-#[cfg(feature = "stream")]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl StreamTrait for DatabaseConnection {
     type Stream<'a> = crate::QueryStream;
 
@@ -355,7 +356,7 @@ impl StreamTrait for DatabaseConnection {
     fn stream_raw<'a>(
         &'a self,
         stmt: Statement,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Stream<'a>, DbErr>> + 'a + Send>> {
+    ) -> crate::StreamFuture<'a, Result<Self::Stream<'a>, DbErr>> {
         Box::pin(async move {
             match &self.inner {
                 #[cfg(feature = "sqlx-mysql")]
@@ -382,7 +383,8 @@ impl StreamTrait for DatabaseConnection {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl TransactionTrait for DatabaseConnection {
     type Transaction = DatabaseTransaction;
 

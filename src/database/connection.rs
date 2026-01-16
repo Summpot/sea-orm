@@ -7,6 +7,12 @@ use crate::{
     DbBackend, DbErr, ExecResult, QueryResult, Statement, StatementBuilder, TransactionError,
 };
 
+#[cfg(target_arch = "wasm32")]
+pub(crate) type StreamFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) type StreamFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// A connection (or transaction) that can run queries against the database.
 ///
 /// Implemented by [`DatabaseConnection`](crate::DatabaseConnection),
@@ -14,7 +20,8 @@ use crate::{
 /// connections used in testing. Most query and mutation methods in SeaORM
 /// (`.one(db)`, `.all(db)`, `.exec(db)`, ...) take any `&impl ConnectionTrait`,
 /// so the same code works on a pool, a transaction, or a mock.
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait ConnectionTrait: Sync {
     /// Get the database backend for the connection. This depends on feature flags enabled.
     fn get_database_backend(&self) -> DbBackend;
@@ -64,10 +71,8 @@ pub trait ConnectionTrait: Sync {
     }
 }
 
-/// Streaming counterpart to [`ConnectionTrait`]: yields query results row by
-/// row rather than collecting them all into a `Vec`. Use this for large
-/// result sets when you don't want to load everything into memory at once.
-#[cfg(feature = "stream")]
+/// Stream query results
+#[cfg(not(target_arch = "wasm32"))]
 pub trait StreamTrait: Send + Sync {
     /// Create a stream for the [QueryResult]
     type Stream<'a>: Stream<Item = Result<QueryResult, DbErr>> + Send
@@ -81,13 +86,41 @@ pub trait StreamTrait: Send + Sync {
     fn stream_raw<'a>(
         &'a self,
         stmt: Statement,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Stream<'a>, DbErr>> + 'a + Send>>;
+    ) -> StreamFuture<'a, Result<Self::Stream<'a>, DbErr>>;
 
     /// Execute a [`StatementBuilder`] and return a stream of results
     fn stream<'a, S: StatementBuilder + Sync>(
         &'a self,
         stmt: &S,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Stream<'a>, DbErr>> + 'a + Send>> {
+    ) -> StreamFuture<'a, Result<Self::Stream<'a>, DbErr>> {
+        let db_backend = self.get_database_backend();
+        let stmt = db_backend.build(stmt);
+        self.stream_raw(stmt)
+    }
+}
+
+/// Stream query results
+#[cfg(target_arch = "wasm32")]
+pub trait StreamTrait {
+    /// Create a stream for the [QueryResult]
+    type Stream<'a>: Stream<Item = Result<QueryResult, DbErr>>
+    where
+        Self: 'a;
+
+    /// Get the database backend for the connection. This depends on feature flags enabled.
+    fn get_database_backend(&self) -> DbBackend;
+
+    /// Execute a [Statement] and return a stream of results
+    fn stream_raw<'a>(
+        &'a self,
+        stmt: Statement,
+    ) -> StreamFuture<'a, Result<Self::Stream<'a>, DbErr>>;
+
+    /// Execute a [QueryStatement] and return a stream of results
+    fn stream<'a, S: StatementBuilder + Sync>(
+        &'a self,
+        stmt: &S,
+    ) -> StreamFuture<'a, Result<Self::Stream<'a>, DbErr>> {
         let db_backend = self.get_database_backend();
         let stmt = db_backend.build(stmt);
         self.stream_raw(stmt)
@@ -184,8 +217,9 @@ pub struct TransactionOptions {
 /// [`Self::Transaction`] must be a fixed point — its own transaction type is
 /// itself — because the `ActiveModelEx` mutation methods recurse through it
 /// (see <https://github.com/SeaQL/sea-orm/issues/3147>).
-#[async_trait::async_trait]
-pub trait TransactionTrait: Sync {
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+pub trait TransactionTrait {
     /// The concrete type for the transaction
     type Transaction: ConnectionTrait
         + TransactionTrait<Transaction = Self::Transaction>
@@ -240,7 +274,8 @@ pub trait TransactionTrait: Sync {
 }
 
 /// Represents an open transaction
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait TransactionSession {
     /// Commit a transaction
     async fn commit(self) -> Result<(), DbErr>;
