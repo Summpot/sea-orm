@@ -165,8 +165,7 @@ where
     }
 
     /// Stream the results of a Select operation on a Model
-    #[cfg(feature = "stream")]
-    pub async fn stream<'a: 'b, 'b, C>(
+    #[cfg(not(target_arch = "wasm32"))]    pub async fn stream<'a: 'b, 'b, C>(
         self,
         db: &'a C,
     ) -> Result<
@@ -179,9 +178,23 @@ where
         self.into_model().stream(db).await
     }
 
+    /// Stream the results of a Select operation on a Model
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<
+        impl Stream<Item = Result<(E::Model, Option<F::Model>, Option<G::Model>), DbErr>> + 'b,
+        DbErr,
+    >
+    where
+        C: ConnectionTrait + StreamTrait,
+    {
+        self.into_model().stream(db).await
+    }
+
     /// Stream the result of the operation with PartialModel
-    #[cfg(feature = "stream")]
-    pub async fn stream_partial_model<'a: 'b, 'b, C, M, N, O>(
+    #[cfg(not(target_arch = "wasm32"))]    pub async fn stream_partial_model<'a: 'b, 'b, C, M, N, O>(
         self,
         db: &'a C,
     ) -> Result<impl Stream<Item = Result<(M, Option<N>, Option<O>), DbErr>> + 'b + Send, DbErr>
@@ -190,6 +203,21 @@ where
         M: PartialModelTrait + Send + 'b,
         N: PartialModelTrait + Send + 'b,
         O: PartialModelTrait + Send + 'b,
+    {
+        self.into_partial_model().stream(db).await
+    }
+
+    /// Stream the result of the operation with PartialModel
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream_partial_model<'a: 'b, 'b, C, M, N, O>(
+        self,
+        db: &'a C,
+    ) -> Result<impl Stream<Item = Result<(M, Option<N>, Option<O>), DbErr>> + 'b, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+        M: PartialModelTrait + 'b,
+        N: PartialModelTrait + 'b,
+        O: PartialModelTrait + 'b,
     {
         self.into_partial_model().stream(db).await
     }

@@ -203,8 +203,7 @@ where
     }
 
     /// Stream the results of a Select operation on a Model
-    #[cfg(feature = "stream")]
-    pub async fn stream<'a: 'b, 'b, C>(
+    #[cfg(not(target_arch = "wasm32"))]    pub async fn stream<'a: 'b, 'b, C>(
         self,
         db: &'a C,
     ) -> Result<
@@ -225,6 +224,33 @@ where
     >
     where
         C: ConnectionTrait + StreamTrait + Send,
+    {
+        self.into_model().stream(db).await
+    }
+
+    /// Stream the results of a Select operation on a Model
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<
+        impl Stream<
+            Item = Result<
+                (
+                    E::Model,
+                    Option<F::Model>,
+                    Option<G::Model>,
+                    Option<H::Model>,
+                    Option<I::Model>,
+                    Option<J::Model>,
+                ),
+                DbErr,
+            >,
+        > + 'b,
+        DbErr,
+    >
+    where
+        C: ConnectionTrait + StreamTrait,
     {
         self.into_model().stream(db).await
     }
