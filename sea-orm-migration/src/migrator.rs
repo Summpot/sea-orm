@@ -9,6 +9,7 @@ pub use with_self::*;
 use std::fmt::Display;
 use tracing::info;
 
+
 use super::{IntoSchemaManagerConnection, MigrationTrait, SchemaManager, seaql_migrations};
 use sea_orm::sea_query::IntoIden;
 use sea_orm::{ConnectionTrait, DbErr, DynIden};
@@ -50,7 +51,8 @@ impl Migration {
 }
 
 /// Performing migrations on a database
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait MigratorTrait: Send {
     /// Vector of migrations in time sequence
     fn migrations() -> Vec<Box<dyn MigrationTrait>>;
@@ -251,6 +253,7 @@ pub trait MigratorTrait: Send {
         exec_down::<Self>(&manager, steps).await
     }
 }
+
 
 async fn exec_fresh<M>(manager: &SchemaManager<'_>) -> Result<(), DbErr>
 where

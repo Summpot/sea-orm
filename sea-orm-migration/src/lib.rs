@@ -22,7 +22,8 @@ pub trait MigrationName {
 }
 
 /// The migration definition
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait MigrationTrait: MigrationName + Send + Sync {
     /// Define actions to perform when applying the migration
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr>;
