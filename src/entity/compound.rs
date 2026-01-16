@@ -15,7 +15,8 @@ pub use belongs_to::{BelongsTo, BelongsToCardinality};
 pub use has_many::{HasMany, Iter as HasManyIter};
 pub use has_one::HasOne;
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait EntityLoaderTrait<E: EntityTrait>: QueryFilter + QueryOrder + Clone {
     /// The return type of this loader
     type ModelEx: ModelTrait<Entity = E>;

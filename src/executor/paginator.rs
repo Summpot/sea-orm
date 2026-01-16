@@ -269,7 +269,8 @@ where
 /// Extension trait that adds `.paginate(db, page_size)` to anything
 /// page-able — [`Select`](crate::Select), [`SelectTwo`](crate::SelectTwo),
 /// [`Selector`], [`SelectorRaw`].
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait PaginatorTrait<'db, C>
 where
     C: ConnectionTrait,

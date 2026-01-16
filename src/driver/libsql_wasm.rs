@@ -372,8 +372,6 @@ impl LibsqlConnector {
     /// Add configuration options for the libsql database.
     #[instrument(level = "trace")]
     pub async fn connect(options: ConnectOptions) -> Result<DatabaseConnection, DbErr> {
-        let after_conn = options.after_connect;
-
         let url = Url::parse(&options.url).map_err(|e| conn_err(e.to_string()))?;
         if url.scheme() != "libsql" {
             return Err(conn_err(format!(
@@ -384,6 +382,8 @@ impl LibsqlConnector {
 
         let auth_token = resolve_libsql_auth_token(&options, &url)
             .ok_or_else(|| conn_err("libsql auth token is required for wasm connections"))?;
+
+        let after_conn = options.after_connect;
 
         let host = url.host_str().unwrap_or_default();
         if host.is_empty() {
@@ -676,7 +676,7 @@ impl LibsqlInnerConnection {
             return Ok(());
         }
 
-        let tx = self.tx.take().ok_or_else(|| conn_err("missing transaction"))?;
+        let mut tx = self.tx.take().ok_or_else(|| conn_err("missing transaction"))?;
         tx.commit().await.map_err(query_err)?;
         self.transaction_depth = 0;
         Ok(())
@@ -688,7 +688,7 @@ impl LibsqlInnerConnection {
             return Ok(());
         }
 
-        let tx = self.tx.take().ok_or_else(|| conn_err("missing transaction"))?;
+        let mut tx = self.tx.take().ok_or_else(|| conn_err("missing transaction"))?;
         tx.rollback().await.map_err(query_err)?;
         self.transaction_depth = 0;
         Ok(())

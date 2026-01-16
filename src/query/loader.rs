@@ -30,7 +30,8 @@ type LoaderRelation<T> =
 /// [`load_many`](Self::load_many) / [`load_many_to_many`](Self::load_many_to_many)
 /// issue a single `WHERE … IN (…)` query for each relation hop and
 /// reassemble the results, grouped per parent.
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait LoaderTrait {
     /// Source model
     type Model: ModelTrait;
@@ -130,7 +131,8 @@ type LoaderExRelation<T> =
     <<<T as LoaderTraitEx>::Model as ModelTrait>::Entity as EntityTrait>::Relation;
 
 #[doc(hidden)]
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait LoaderTraitEx {
     type Model: ModelTrait;
 
@@ -223,7 +225,8 @@ type NestedLoaderRelation<T> =
     <<<T as NestedLoaderTrait>::Model as ModelTrait>::Entity as EntityTrait>::Relation;
 
 #[doc(hidden)]
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait NestedLoaderTrait {
     type Model: ModelTrait;
 
@@ -333,7 +336,8 @@ where
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<M> LoaderTrait for Vec<M>
 where
     M: ModelTrait + Sync,
@@ -439,7 +443,8 @@ where
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<M> LoaderTrait for &[M]
 where
     M: ModelTrait + Sync,
@@ -661,7 +666,8 @@ where
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<M> LoaderTraitEx for &[M]
 where
     M: ModelTrait + Sync,
@@ -798,7 +804,8 @@ where
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<M> LoaderTraitEx for &[Option<M>]
 where
     M: ModelTrait + Sync,
@@ -972,7 +979,8 @@ where
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<M> NestedLoaderTrait for &[Vec<M>]
 where
     M: ModelTrait + Sync,

@@ -15,7 +15,8 @@ use std::fmt::Debug;
 /// Implemented automatically by `#[derive(DeriveEntityModel)]` /
 /// `#[derive(DeriveModel)]`. Pairs with an [`ActiveModelTrait`] type for
 /// mutations.
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait ModelTrait: Clone + Send + Debug {
     /// The [`EntityTrait`] this model belongs to.
     type Entity: EntityTrait;

@@ -27,7 +27,8 @@ use std::fmt::Debug;
 ///
 /// This makes ActiveModel ideal for partial updates: only the columns you
 /// touch end up in the generated `UPDATE`.
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait ActiveModelTrait: Clone + Debug {
     /// The [`EntityTrait`] this ActiveModel belongs to.
     type Entity: EntityTrait;
@@ -1061,7 +1062,8 @@ pub trait ActiveModelTrait: Clone + Debug {
 /// }
 /// ```
 #[allow(unused_variables)]
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait ActiveModelBehavior: ActiveModelTrait {
     /// Build a fresh ActiveModel. Defaults to [`ActiveModelTrait::default`]
     /// (every column `NotSet`); override to pre-fill columns:

@@ -25,8 +25,10 @@ mod three;
 #[cfg(feature = "with-json")]
 use crate::JsonValue;
 
-#[cfg(all(not(feature = "sync"), feature = "stream"))]
-type PinBoxStream<'b, S> = std::pin::Pin<Box<dyn Stream<Item = Result<S, DbErr>> + 'b + Send>>;
+#[cfg(all(not(feature = "sync"), target_arch = "wasm32"))]
+type PinBoxStream<'b, S> = Pin<Box<dyn Stream<Item = Result<S, DbErr>> + 'b>>;
+#[cfg(all(not(feature = "sync"), not(target_arch = "wasm32")))]
+type PinBoxStream<'b, S> = Pin<Box<dyn Stream<Item = Result<S, DbErr>> + 'b + Send>>;
 #[cfg(feature = "sync")]
 type PinBoxStream<'b, S> = Box<dyn Iterator<Item = Result<S, DbErr>> + 'b + Send>;
 
@@ -554,7 +556,7 @@ where
     }
 
     /// Stream the results of a SELECT operation on a Model
-    #[cfg(feature = "stream")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream<'a: 'b, 'b, C>(
         self,
         db: &'a C,
@@ -565,8 +567,20 @@ where
         self.into_model().stream(db).await
     }
 
+    /// Stream the results of a SELECT operation on a Model
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<impl Stream<Item = Result<E::Model, DbErr>> + 'b, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+    {
+        self.into_model().stream(db).await
+    }
+
     /// Stream the result of the operation with PartialModel
-    #[cfg(feature = "stream")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream_partial_model<'a: 'b, 'b, C, M>(
         self,
         db: &'a C,
@@ -574,6 +588,19 @@ where
     where
         C: ConnectionTrait + StreamTrait + Send,
         M: PartialModelTrait + Send + 'b,
+    {
+        self.into_partial_model().stream(db).await
+    }
+
+    /// Stream the result of the operation with PartialModel
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream_partial_model<'a: 'b, 'b, C, M>(
+        self,
+        db: &'a C,
+    ) -> Result<impl Stream<Item = Result<M, DbErr>> + 'b, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+        M: PartialModelTrait + 'b,
     {
         self.into_partial_model().stream(db).await
     }
@@ -634,7 +661,7 @@ where
     }
 
     /// Stream the results of a Select operation on a Model
-    #[cfg(feature = "stream")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream<'a: 'b, 'b, C>(
         self,
         db: &'a C,
@@ -645,8 +672,20 @@ where
         self.into_model().stream(db).await
     }
 
+    /// Stream the results of a Select operation on a Model
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<impl Stream<Item = Result<(E::Model, Option<F::Model>), DbErr>> + 'b, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+    {
+        self.into_model().stream(db).await
+    }
+
     /// Stream the result of the operation with PartialModel
-    #[cfg(feature = "stream")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream_partial_model<'a: 'b, 'b, C, M, N>(
         self,
         db: &'a C,
@@ -655,6 +694,20 @@ where
         C: ConnectionTrait + StreamTrait + Send,
         M: PartialModelTrait + Send + 'b,
         N: PartialModelTrait + Send + 'b,
+    {
+        self.into_partial_model().stream(db).await
+    }
+
+    /// Stream the result of the operation with PartialModel
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream_partial_model<'a: 'b, 'b, C, M, N>(
+        self,
+        db: &'a C,
+    ) -> Result<impl Stream<Item = Result<(M, Option<N>), DbErr>> + 'b, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+        M: PartialModelTrait + 'b,
+        N: PartialModelTrait + 'b,
     {
         self.into_partial_model().stream(db).await
     }
@@ -821,12 +874,41 @@ where
     }
 
     /// Stream the results of the Select operation
-    #[cfg(feature = "stream")]
-    pub async fn stream<'a: 'b, 'b, C>(self, db: &'a C) -> Result<PinBoxStream<'b, S::Item>, DbErr>
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<PinBoxStream<'b, S::Item>, DbErr>
     where
         C: ConnectionTrait + StreamTrait + Send,
         S: 'b,
         S::Item: Send,
+    {
+        let stream = db.stream(&self.query).await?;
+
+        #[cfg(not(feature = "sync"))]
+        {
+            Ok(Box::pin(stream.and_then(|row| {
+                futures_util::future::ready(S::from_raw_query_result(row))
+            })))
+        }
+        #[cfg(feature = "sync")]
+        {
+            Ok(Box::new(
+                stream.map(|item| item.and_then(S::from_raw_query_result)),
+            ))
+        }
+    }
+
+    /// Stream the results of the Select operation
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<PinBoxStream<'b, S::Item>, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+        S: 'b,
     {
         let stream = db.stream(&self.query).await?;
 
@@ -1106,12 +1188,41 @@ where
     }
 
     /// Stream the results of the Select operation
-    #[cfg(feature = "stream")]
-    pub async fn stream<'a: 'b, 'b, C>(self, db: &'a C) -> Result<PinBoxStream<'b, S::Item>, DbErr>
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<PinBoxStream<'b, S::Item>, DbErr>
     where
         C: ConnectionTrait + StreamTrait + Send,
         S: 'b,
         S::Item: Send,
+    {
+        let stream = db.stream_raw(self.stmt).await?;
+
+        #[cfg(not(feature = "sync"))]
+        {
+            Ok(Box::pin(stream.and_then(|row| {
+                futures_util::future::ready(S::from_raw_query_result(row))
+            })))
+        }
+        #[cfg(feature = "sync")]
+        {
+            Ok(Box::new(
+                stream.map(|item| item.and_then(S::from_raw_query_result)),
+            ))
+        }
+    }
+
+    /// Stream the results of the Select operation
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<PinBoxStream<'b, S::Item>, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+        S: 'b,
     {
         let stream = db.stream_raw(self.stmt).await?;
 
