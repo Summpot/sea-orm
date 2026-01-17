@@ -20,6 +20,7 @@ pub(crate) struct MetricStream<'a> {
 
 impl<'a> MetricStream<'a> {
     #[allow(dead_code)]
+    #[cfg(target_arch = "wasm32")]
     pub(crate) fn new<S>(
         metric_callback: &'a Option<crate::metric::Callback>,
         stmt: &'a Statement,
@@ -28,6 +29,24 @@ impl<'a> MetricStream<'a> {
     ) -> Self
     where
         S: Stream<Item = Result<QueryResult, DbErr>> + 'a,
+    {
+        MetricStream {
+            metric_callback,
+            stmt,
+            elapsed,
+            stream: Box::pin(stream),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn new<S>(
+        metric_callback: &'a Option<crate::metric::Callback>,
+        stmt: &'a Statement,
+        elapsed: Option<Duration>,
+        stream: S,
+    ) -> Self
+    where
+        S: Stream<Item = Result<QueryResult, DbErr>> + 'a + Send,
     {
         MetricStream {
             metric_callback,
