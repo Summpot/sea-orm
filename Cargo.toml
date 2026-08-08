@@ -247,6 +247,7 @@ with-rust_decimal = [
 ]
 with-time = [
     "time",
+    "time/parsing",
     "sea-query/with-time",
     "sea-query-sqlx?/with-time",
     "sea-orm-arrow?/with-time",

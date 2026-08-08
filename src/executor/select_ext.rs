@@ -4,7 +4,8 @@ use crate::{
 };
 use sea_query::{Expr, SelectStatement};
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 /// Helper trait for selectors with convenient methods
 pub trait SelectExt {
     /// This method is unstable and is only used for internal testing.

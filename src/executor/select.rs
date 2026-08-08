@@ -7,15 +7,12 @@ use crate::{
     QueryResult, QuerySelect, Select, SelectA, SelectB, SelectTwo, SelectTwoMany,
     SelectTwoRequired, Statement, TryGetableMany, error::*,
 };
-
-#[cfg(feature = "stream")]
 pub use crate::StreamTrait;
-#[cfg(feature = "stream")]
 use futures_util::{Stream, TryStreamExt};
 
 use itertools::Itertools;
 use sea_query::SelectStatement;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, pin::Pin};
 
 mod five;
 mod four;
@@ -813,7 +810,7 @@ where
     }
 
     /// Stream the results of a Select operation on a Model
-    #[cfg(feature = "stream")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream<'a: 'b, 'b, C>(
         self,
         db: &'a C,
@@ -824,8 +821,20 @@ where
         self.into_model().stream(db).await
     }
 
+    /// Stream the results of a Select operation on a Model
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream<'a: 'b, 'b, C>(
+        self,
+        db: &'a C,
+    ) -> Result<impl Stream<Item = Result<(E::Model, F::Model), DbErr>> + 'b, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+    {
+        self.into_model().stream(db).await
+    }
+
     /// Stream the result of the operation with PartialModel
-    #[cfg(feature = "stream")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream_partial_model<'a: 'b, 'b, C, M, N>(
         self,
         db: &'a C,
@@ -834,6 +843,20 @@ where
         C: ConnectionTrait + StreamTrait + Send,
         M: PartialModelTrait + Send + 'b,
         N: PartialModelTrait + Send + 'b,
+    {
+        self.into_partial_model().stream(db).await
+    }
+
+    /// Stream the result of the operation with PartialModel
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stream_partial_model<'a: 'b, 'b, C, M, N>(
+        self,
+        db: &'a C,
+    ) -> Result<impl Stream<Item = Result<(M, N), DbErr>> + 'b, DbErr>
+    where
+        C: ConnectionTrait + StreamTrait,
+        M: PartialModelTrait + 'b,
+        N: PartialModelTrait + 'b,
     {
         self.into_partial_model().stream(db).await
     }

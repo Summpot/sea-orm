@@ -28,6 +28,7 @@ pub struct LibsqlSharedConnection {
 	conn: Arc<Mutex<State>>,
 	acquire_timeout: Duration,
 	metric_callback: Option<crate::metric::Callback>,
+	pub(crate) record_stmt_in_spans: bool,
 }
 
 pub(crate) struct LibsqlInnerConnection {
@@ -370,6 +371,7 @@ impl From<LibsqlConnection> for LibsqlSharedConnection {
 			conn: Arc::new(Mutex::new(State::Idle(conn))),
 			acquire_timeout: DEFAULT_ACQUIRE_TIMEOUT,
 			metric_callback: None,
+			record_stmt_in_spans: true,
 		}
 	}
 }
@@ -385,7 +387,7 @@ impl LibsqlConnector {
 	#[instrument(level = "trace")]
 	pub async fn connect(options: ConnectOptions) -> Result<DatabaseConnection, DbErr> {
 		let acquire_timeout = options.acquire_timeout.unwrap_or(DEFAULT_ACQUIRE_TIMEOUT);
-		let after_conn = options.after_connect;
+		let record_stmt_in_spans = options.get_record_stmt_in_spans();
 
 		let url = url::Url::parse(&options.url).map_err(|e| conn_err(e.to_string()))?;
 		if url.scheme() != "libsql" {
@@ -396,6 +398,7 @@ impl LibsqlConnector {
 		}
 
 		let auth_token = resolve_libsql_auth_token(&options, &url);
+		let after_conn = options.after_connect;
 		let host = url.host_str().unwrap_or_default();
 		let mut conn = if host.is_empty() {
 			let raw_path = url.path();
@@ -432,6 +435,7 @@ impl LibsqlConnector {
 				conn: Arc::new(Mutex::new(State::Idle(conn))),
 				acquire_timeout,
 				metric_callback: None,
+				record_stmt_in_spans,
 			}
 		} else {
 			let token = auth_token.ok_or_else(|| {
@@ -448,6 +452,7 @@ impl LibsqlConnector {
 				conn: Arc::new(Mutex::new(State::Idle(conn))),
 				acquire_timeout,
 				metric_callback: None,
+				record_stmt_in_spans,
 			}
 		};
 
@@ -575,8 +580,10 @@ impl LibsqlSharedConnection {
 			Arc::new(futures_util::lock::Mutex::new(InnerConnection::Libsql(conn))),
 			crate::DbBackend::Sqlite,
 			self.metric_callback.clone(),
+			self.record_stmt_in_spans,
 			isolation_level,
 			access_mode,
+			None,
 		)
 		.await
 	}

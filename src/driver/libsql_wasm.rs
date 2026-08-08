@@ -26,6 +26,7 @@ pub struct LibsqlConnector;
 pub struct LibsqlSharedConnection {
     conn: LibsqlWasmConnection,
     metric_callback: Option<crate::metric::Callback>,
+    pub(crate) record_stmt_in_spans: bool,
 }
 
 pub(crate) struct LibsqlInnerConnection {
@@ -358,6 +359,7 @@ impl From<LibsqlWasmConnection> for LibsqlSharedConnection {
         LibsqlSharedConnection {
             conn,
             metric_callback: None,
+            record_stmt_in_spans: true,
         }
     }
 }
@@ -383,6 +385,7 @@ impl LibsqlConnector {
         let auth_token = resolve_libsql_auth_token(&options, &url)
             .ok_or_else(|| conn_err("libsql auth token is required for wasm connections"))?;
 
+        let record_stmt_in_spans = options.get_record_stmt_in_spans();
         let after_conn = options.after_connect;
 
         let host = url.host_str().unwrap_or_default();
@@ -395,7 +398,9 @@ impl LibsqlConnector {
 
         let url = strip_auth_from_url(url).to_string();
         let conn = LibsqlWasmConnection::open_cloudflare_worker(url, auth_token);
-        let conn: DatabaseConnection = LibsqlSharedConnection::from(conn).into();
+        let mut conn: LibsqlSharedConnection = LibsqlSharedConnection::from(conn);
+        conn.record_stmt_in_spans = record_stmt_in_spans;
+        let conn: DatabaseConnection = conn.into();
 
         if let Some(cb) = after_conn {
             cb(conn.clone()).await?;
@@ -482,8 +487,10 @@ impl LibsqlSharedConnection {
             Arc::new(futures_util::lock::Mutex::new(InnerConnection::Libsql(conn))),
             crate::DbBackend::Sqlite,
             self.metric_callback.clone(),
+            self.record_stmt_in_spans,
             isolation_level,
             access_mode,
+            None,
         )
         .await
     }

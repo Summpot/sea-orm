@@ -25,6 +25,8 @@ prettyplease = { version = "0.2", default-features = false, features = [
 proc-macro2 = { version = "1", default-features = false }
 quote = { version = "1", default-features = false }
 sea-query = { version = "1.0.0", default-features = false, features = [
+    "thread-safe",
+] }
 syn = { version = "2", default-features = false, features = [
     "parsing",
     "proc-macro",

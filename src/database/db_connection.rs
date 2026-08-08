@@ -440,6 +440,10 @@ DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.begin(None, None,
             DatabaseConnectionType::RusqliteSharedConnection(conn) => {
                 conn.begin(_isolation_level, _access_mode, None)
             }
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => {
+                conn.begin(_isolation_level, _access_mode).await
+            }
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(conn) => {
                 DatabaseTransaction::new_mock(Arc::clone(conn), None).await
@@ -735,6 +739,8 @@ impl DatabaseConnection {
             DatabaseConnectionType::SqlxSqlitePoolConnection(conn) => conn.record_stmt_in_spans,
             #[cfg(feature = "rusqlite")]
             DatabaseConnectionType::RusqliteSharedConnection(conn) => conn.record_stmt_in_spans,
+            #[cfg(feature = "libsql")]
+            DatabaseConnectionType::LibsqlSharedConnection(conn) => conn.record_stmt_in_spans,
             DatabaseConnectionType::Disconnected => true,
             #[cfg(feature = "mock")]
             DatabaseConnectionType::MockDatabaseConnection(_) => true,
