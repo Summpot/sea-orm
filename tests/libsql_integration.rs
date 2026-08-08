@@ -35,9 +35,7 @@ async fn setup(db: &DatabaseConnection) {
 async fn libsql_crud_and_transaction() {
     let db = Database::connect("libsql:///").await
         .expect("connect to in-memory libsql");
-    setup(&db).await;
-
-    // Insert
+    setup(&db).await;    // Insert
     let _cake = ActiveModel {
         id: Set(1),
         name: Set("cheesecake".to_owned()),
@@ -134,4 +132,30 @@ async fn libsql_crud_and_transaction() {
         .await
         .expect("delete");
     assert_eq!(deleted.rows_affected, 1);
+}
+#[tokio::test]
+async fn libsql_file_based_db() {
+    let dir = std::env::temp_dir().join(format!("seaorm_libsql_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("test.db").to_string_lossy().to_string();
+    let url = format!("libsql:///{db_path}");
+    let db = Database::connect(&url)
+        .await
+        .unwrap_or_else(|e| panic!("connect to file libsql at {url}: {e}"));
+    setup(&db).await;
+
+    ActiveModel {
+        id: Set(10),
+        name: Set("filecake".to_owned()),
+        qty: Set(7),
+    }
+    .insert(&db)
+    .await
+    .expect("insert into file db");
+
+    let all = Entity::find().all(&db).await.expect("find all");
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].name, "filecake");
+
+    std::fs::remove_dir_all(&dir).ok();
 }
