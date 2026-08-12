@@ -6,7 +6,8 @@ use sea_orm::{ConnectionTrait, DbErr, DynIden};
 use tracing::info;
 
 /// Performing migrations on a database
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait MigratorTraitSelf: Sized + Send + Sync {
     /// Vector of migrations in time sequence
     fn migrations(&self) -> Vec<Box<dyn MigrationTrait>>;
@@ -212,7 +213,8 @@ pub trait MigratorTraitSelf: Sized + Send + Sync {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl<M> MigratorTraitSelf for M
 where
     M: super::MigratorTrait + Sized + Send + Sync,
